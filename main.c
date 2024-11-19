@@ -17,7 +17,7 @@ typedef __int128_t  i128;
 typedef __uint128_t u128;
 
 #define BUFF_SIZE           10240
-#define DEFAULT_FILENAME    "hw/listing_0040_challenge_movs"
+#define DEFAULT_FILENAME    "hw/listing_0041_add_sub_cmp_jnz"
 
 
 typedef struct InstPrefix {
@@ -33,6 +33,35 @@ const InstPrefix OP_MOV_ACC_MEM = { .prefix = 0b10100010, .mask = 0b11111110 };
 const InstPrefix OP_MOV_RGM_SRG = { .prefix = 0b10001110, .mask = 0b11111111 };
 const InstPrefix OP_MOV_SRG_RGM = { .prefix = 0b10001100, .mask = 0b11111111 };
 
+const InstPrefix OP_____IMM_RGM = { .prefix = 0b10000000, .mask = 0b11111100 };  // Shared first byte for ADD, SUB, and CMP
+const InstPrefix OP_ADD_RGM_REG = { .prefix = 0b00000000, .mask = 0b11111100 };
+const InstPrefix OP_ADD_IMM_ACC = { .prefix = 0b00000100, .mask = 0b11111110 };
+const InstPrefix OP_SUB_RGM_REG = { .prefix = 0b00101000, .mask = 0b11111100 };
+const InstPrefix OP_SUB_IMM_ACC = { .prefix = 0b00101100, .mask = 0b11111110 };
+const InstPrefix OP_CMP_RGM_REG = { .prefix = 0b00111000, .mask = 0b11111100 };
+const InstPrefix OP_CMP_IMM_ACC = { .prefix = 0b00111100, .mask = 0b11111110 };
+
+const InstPrefix OP_JE          = { .prefix = 0b01110100, .mask = 0b11111111 };
+const InstPrefix OP_JL          = { .prefix = 0b01111100, .mask = 0b11111111 };
+const InstPrefix OP_JLE         = { .prefix = 0b01111110, .mask = 0b11111111 };
+const InstPrefix OP_JB          = { .prefix = 0b01110010, .mask = 0b11111111 };
+const InstPrefix OP_JBE         = { .prefix = 0b01110110, .mask = 0b11111111 };
+const InstPrefix OP_JP          = { .prefix = 0b01111010, .mask = 0b11111111 };
+const InstPrefix OP_JO          = { .prefix = 0b01110000, .mask = 0b11111111 };
+const InstPrefix OP_JS          = { .prefix = 0b01111000, .mask = 0b11111111 };
+const InstPrefix OP_JNE         = { .prefix = 0b01110101, .mask = 0b11111111 };
+const InstPrefix OP_JNL         = { .prefix = 0b01111101, .mask = 0b11111111 };
+const InstPrefix OP_JG          = { .prefix = 0b01111111, .mask = 0b11111111 };
+const InstPrefix OP_JNB         = { .prefix = 0b01110011, .mask = 0b11111111 };
+const InstPrefix OP_JA          = { .prefix = 0b01110111, .mask = 0b11111111 };
+const InstPrefix OP_JNP         = { .prefix = 0b01111011, .mask = 0b11111111 };
+const InstPrefix OP_JNO         = { .prefix = 0b01110001, .mask = 0b11111111 };
+const InstPrefix OP_JNS         = { .prefix = 0b01111001, .mask = 0b11111111 };
+const InstPrefix OP_LOOP        = { .prefix = 0b11100010, .mask = 0b11111111 };
+const InstPrefix OP_LOOPZ       = { .prefix = 0b11100001, .mask = 0b11111111 };
+const InstPrefix OP_LOOPNZ      = { .prefix = 0b11100000, .mask = 0b11111111 };
+const InstPrefix OP_JCXZ        = { .prefix = 0b11100011, .mask = 0b11111111 };
+
 static u8 scratch[BUFF_SIZE];
 static u8* next_scratch = scratch;
 
@@ -44,50 +73,6 @@ char* u8_to_str(u8 byte) {
     }
     return str;
 }
-
-int decode_rgm(char* out_str, u8 rgm, u8 mod, u8 byte3, u8 byte4) {
-    // Set prefix
-    switch(rgm) {
-    case 0b000: strcpy(out_str, "[bx + si"); break;
-    case 0b001: strcpy(out_str, "[bx + di"); break;
-    case 0b010: strcpy(out_str, "[bp + si"); break;
-    case 0b011: strcpy(out_str, "[bp + di"); break;
-    case 0b100: strcpy(out_str, "[si"); break;
-    case 0b101: strcpy(out_str, "[di"); break;
-    case 0b110: strcpy(out_str, "[bp"); break;
-    case 0b111: strcpy(out_str, "[bx"); break;
-    default: {
-        fprintf(stderr, "Unknown rgm identifier: rgm=%s\n", u8_to_str(rgm));
-        exit(1);
-    }
-    }
-
-    int step_by = 0;
-    if(mod == 0b00 && rgm == 0b110) {
-        step_by = 2;
-        u16 disp16 = (byte4 << 8) | byte3;
-        sprintf(out_str, "[%d", disp16);
-    } else if(mod == 0b01) {
-        step_by = 1;
-        if(byte3 != 0) {
-            i8 sbyte3 = (i8) byte3;
-            char sign = sbyte3 >= 0 ? '+' : '-';
-            sbyte3 = sbyte3 < 0 ? -sbyte3 : sbyte3;
-            sprintf(out_str + strlen(out_str), " %c %d", sign, sbyte3);
-        }
-    } else if(mod == 0b10) {
-        step_by = 2;
-        i16 disp16 = (byte4 << 8) | byte3;
-        if(disp16 != 0) {
-            char sign = disp16 >= 0 ? '+' : '-';
-            disp16 = disp16 < 0 ? -disp16 : disp16;
-            sprintf(out_str + strlen(out_str), " %c %d", sign, disp16);
-        }
-    }
-    sprintf(out_str + strlen(out_str), "%c", ']');
-    return step_by;
-}
-
 
 void decode_reg(char* out_str, u8 w, u8 reg) {
     u8 ident = (w << 3) | reg;
@@ -115,7 +100,60 @@ void decode_reg(char* out_str, u8 w, u8 reg) {
     }
 }
 
+int decode_rgm(char* out_str, u8 w, u8 mod, u8 rgm, u8 byte3, u8 byte4) {
+    if(mod == 0b11) {
+        decode_reg(out_str, w, rgm);
+        return 0;
+    }
+
+    // Set prefix
+    switch(rgm) {
+    case 0b000: strcpy(out_str, "[bx + si"); break;
+    case 0b001: strcpy(out_str, "[bx + di"); break;
+    case 0b010: strcpy(out_str, "[bp + si"); break;
+    case 0b011: strcpy(out_str, "[bp + di"); break;
+    case 0b100: strcpy(out_str, "[si"); break;
+    case 0b101: strcpy(out_str, "[di"); break;
+    case 0b110: strcpy(out_str, "[bp"); break;
+    case 0b111: strcpy(out_str, "[bx"); break;
+    default: {
+        fprintf(stderr, "Unknown rgm identifier: rgm=%s\n", u8_to_str(rgm));
+        exit(1);
+    }
+    }
+
+    int step_by = 0;
+    if(mod == 0b00 && rgm == 0b110) {
+        step_by = 2;
+        u16 disp16 = (byte4 << 8) | byte3;
+        sprintf(out_str, "[%d", disp16);
+    } else if(mod == 0b01) {
+        step_by = 1;
+        // if(byte3 != 0) {
+            i8 sbyte3 = (i8) byte3;
+            char sign = sbyte3 >= 0 ? '+' : '-';
+            sbyte3 = sbyte3 < 0 ? -sbyte3 : sbyte3;
+            sprintf(out_str + strlen(out_str), " %c %d", sign, sbyte3);
+        // }
+    } else if(mod == 0b10) {
+        step_by = 2;
+        i16 disp16 = (byte4 << 8) | byte3;
+        if(disp16 != 0) {
+            char sign = disp16 >= 0 ? '+' : '-';
+            disp16 = disp16 < 0 ? -disp16 : disp16;
+            sprintf(out_str + strlen(out_str), " %c %d", sign, disp16);
+        }
+    }
+    sprintf(out_str + strlen(out_str), "%c", ']');
+    return step_by;
+}
+
+
+
 int main(int argc, const char** argv) {
+    setbuf(stdout, NULL);
+    setbuf(stderr, NULL);
+
     const char* filename = DEFAULT_FILENAME;
     if(argc > 1) {
         filename = argv[1];
@@ -156,8 +194,6 @@ int main(int argc, const char** argv) {
         next_scratch = scratch;
 
         u8 byte1 = data[i];
-        // fprintf(out, "BYTE[%d]: %s\n", i, u8_to_str(byte1));
-
         char inst_str[8] = { 0 };
         char dst_operand_str[32] = { 0 };
         char src_operand_str[32] = { 0 };
@@ -179,10 +215,9 @@ int main(int argc, const char** argv) {
                 char* rgm_str = d == 0 ? dst_operand_str : src_operand_str;
                 char* reg_str = d == 0 ? src_operand_str : dst_operand_str;
                 decode_reg(reg_str, w, reg);
-                int step_by = decode_rgm(rgm_str, rgm, mod, data[i+1], data[i+2]);
+                int step_by = decode_rgm(rgm_str, w, mod, rgm, data[i+1], data[i+2]);
                 i += step_by;
             }
-
         }
         else if((byte1 & OP_MOV_IMM_RGM.mask) == OP_MOV_IMM_RGM.prefix) {
             strcpy(inst_str, "mov");
@@ -191,7 +226,7 @@ int main(int argc, const char** argv) {
             u8 mod      = (byte2 & 0b11000000) >> 6;
             u8 rgm      = (byte2 & 0b00000111);
 
-            int step_by = decode_rgm(dst_operand_str, rgm, mod, data[i+1], data[i+2]);
+            int step_by = decode_rgm(dst_operand_str, w, mod, rgm, data[i+1], data[i+2]);
             i += step_by;
 
             if(w == 0) {
@@ -222,6 +257,7 @@ int main(int argc, const char** argv) {
         else if((byte1 & OP_MOV_MEM_ACC.mask) == OP_MOV_MEM_ACC.prefix ||
                 (byte1 & OP_MOV_ACC_MEM.mask) == OP_MOV_ACC_MEM.prefix) {
             strcpy(inst_str, "mov");
+            u8 w        = (byte1 & 0b00000001);
             char* mem;
             char* acc;
             if((byte1 & OP_MOV_MEM_ACC.mask) == OP_MOV_MEM_ACC.prefix) {
@@ -231,8 +267,6 @@ int main(int argc, const char** argv) {
                 mem = dst_operand_str;
                 acc = src_operand_str;
             }
-
-            u8 w        = (byte1 & 0b00000001);
             if(w == 0) {
                 strcpy(acc, "al");
                 u8 byte2 = data[++i];
@@ -245,19 +279,172 @@ int main(int argc, const char** argv) {
                 sprintf(mem, "[%d]", value16);
             }
         }
+        else if((byte1 & OP_____IMM_RGM.mask) == OP_____IMM_RGM.prefix) {
+            u8 s        = (byte1 & 0b00000010) >> 1;
+            u8 w        = (byte1 & 0b00000001);
+            u8 byte2    = data[++i];
+            u8 mod      = (byte2 & 0b11000000) >> 6;
+            u8 op       = (byte2 & 0b00111000) >> 3;
+            u8 rgm      = (byte2 & 0b00000111);
+
+            if(op == 0b000) {
+                strcpy(inst_str, "add");
+            } else if(op == 0b101) {
+                strcpy(inst_str, "sub");
+            } else if(op == 0b111) {
+                strcpy(inst_str, "cmp");
+            } else {
+                fprintf(stderr, "Unknown sub op for OP_____IMM_RGM: %s", u8_to_str(op));
+                exit(1);
+            }
+
+            int step_by = decode_rgm(dst_operand_str, w, mod, rgm, data[i+1], data[i+2]);
+            i += step_by;
+
+            // FIXME: This is broken: finds `add [bx], 34`, expected `add byte [bx], 34`
+            if(s == 0 && w == 1) {
+                u8 byte5 = data[++i];
+                u8 byte6 = data[++i];
+                u16 value16 = (byte6 << 8) | byte5;
+                sprintf(src_operand_str, "%d", value16);
+            } else {
+                u8 byte5 = data[++i];
+                sprintf(src_operand_str, "%d", (s == 1 ? (i8) byte5 : (u8) byte5));
+            }
+        }
+        else if((byte1 & OP_ADD_RGM_REG.mask) == OP_ADD_RGM_REG.prefix) {
+            strcpy(inst_str, "add");
+            u8 byte2    = data[++i];
+            u8 d        = (byte1 & 0b00000010) >> 1;           // 0 = REG is SRC, 1 = REG is DST
+            u8 w        = (byte1 & 0b00000001);
+            u8 mod      = (byte2 & 0b11000000) >> 6;
+            u8 reg      = (byte2 & 0b00111000) >> 3;
+            u8 rgm      = (byte2 & 0b00000111);
+
+            if(mod == 0b11) {
+                u8 dst = d == 0 ? rgm : reg;
+                u8 src = d == 0 ? reg : rgm;
+                decode_reg(dst_operand_str, w, dst);
+                decode_reg(src_operand_str, w, src);
+            } else {
+                char* rgm_str = d == 0 ? dst_operand_str : src_operand_str;
+                char* reg_str = d == 0 ? src_operand_str : dst_operand_str;
+                decode_reg(reg_str, w, reg);
+                int step_by = decode_rgm(rgm_str, w, mod, rgm, data[i+1], data[i+2]);
+                i += step_by;
+            }
+        }
+        else if((byte1 & OP_ADD_IMM_ACC.mask) == OP_ADD_IMM_ACC.prefix) {
+            fprintf(stderr, "Not yet: OP_ADD_IMM_ACC");
+            exit(1);
+        }
+        else if((byte1 & OP_SUB_RGM_REG.mask) == OP_SUB_RGM_REG.prefix) {
+            fprintf(stderr, "Not yet: OP_SUB_RGM_REG");
+            exit(1);
+        }
+        else if((byte1 & OP_SUB_IMM_ACC.mask) == OP_SUB_IMM_ACC.prefix) {
+            fprintf(stderr, "Not yet: OP_SUB_IMM_ACC");
+            exit(1);
+        }
+        else if((byte1 & OP_CMP_RGM_REG.mask) == OP_CMP_RGM_REG.prefix) {
+            fprintf(stderr, "Not yet: OP_CMP_RGM_REG");
+            exit(1);
+        }
+        else if((byte1 & OP_CMP_IMM_ACC.mask) == OP_CMP_IMM_ACC.prefix) {
+            fprintf(stderr, "Not yet: OP_CMP_IMM_ACC");
+            exit(1);
+        }
+        else if((byte1 & OP_JE.mask) ==  OP_JE.prefix) {
+            fprintf(stderr, "Not yet: OP_JE");
+            exit(1);
+        }
+        else if((byte1 & OP_JL.mask) ==  OP_JL.prefix) {
+            fprintf(stderr, "Not yet: OP_JL");
+            exit(1);
+        }
+        else if((byte1 & OP_JLE.mask) == OP_JLE.prefix) {
+            fprintf(stderr, "Not yet: OP_JLE");
+            exit(1);
+        }
+        else if((byte1 & OP_JB.mask) ==  OP_JB.prefix) {
+            fprintf(stderr, "Not yet: OP_JB");
+            exit(1);
+        }
+        else if((byte1 & OP_JBE.mask) == OP_JBE.prefix) {
+            fprintf(stderr, "Not yet: OP_JBE");
+            exit(1);
+        }
+        else if((byte1 & OP_JP.mask) ==  OP_JP.prefix) {
+            fprintf(stderr, "Not yet: OP_JP");
+            exit(1);
+        }
+        else if((byte1 & OP_JO.mask) ==  OP_JO.prefix) {
+            fprintf(stderr, "Not yet: OP_JO");
+            exit(1);
+        }
+        else if((byte1 & OP_JS.mask) ==  OP_JS.prefix) {
+            fprintf(stderr, "Not yet: OP_JS");
+            exit(1);
+        }
+        else if((byte1 & OP_JNE.mask) == OP_JNE.prefix) {
+            fprintf(stderr, "Not yet: OP_JNE");
+            exit(1);
+        }
+        else if((byte1 & OP_JNL.mask) == OP_JNL.prefix) {
+            fprintf(stderr, "Not yet: OP_JNL");
+            exit(1);
+        }
+        else if((byte1 & OP_JG.mask) ==  OP_JG.prefix) {
+            fprintf(stderr, "Not yet: OP_JG");
+            exit(1);
+        }
+        else if((byte1 & OP_JNB.mask) == OP_JNB.prefix) {
+            fprintf(stderr, "Not yet: OP_JNB");
+            exit(1);
+        }
+        else if((byte1 & OP_JA.mask) ==  OP_JA.prefix) {
+            fprintf(stderr, "Not yet: OP_JA");
+            exit(1);
+        }
+        else if((byte1 & OP_JNP.mask) == OP_JNP.prefix) {
+            fprintf(stderr, "Not yet: OP_JNP");
+            exit(1);
+        }
+        else if((byte1 & OP_JNO.mask) == OP_JNO.prefix) {
+            fprintf(stderr, "Not yet: OP_JNO");
+            exit(1);
+        }
+        else if((byte1 & OP_JNS.mask) == OP_JNS.prefix) {
+            fprintf(stderr, "Not yet: OP_JNS");
+            exit(1);
+        }
+        else if((byte1 & OP_LOOP.mask) == OP_LOOP.prefix) {
+            fprintf(stderr, "Not yet: OP_LOOP");
+            exit(1);
+        }
+        else if((byte1 & OP_LOOPZ.mask) == OP_LOOPZ.prefix) {
+            fprintf(stderr, "Not yet: OP_LOOPZ");
+            exit(1);
+        }
+        else if((byte1 & OP_LOOPNZ.mask) == OP_LOOPNZ.prefix) {
+            fprintf(stderr, "Not yet: OP_LOOPNZ");
+            exit(1);
+        }
+        else if((byte1 & OP_JCXZ.mask) == OP_JCXZ.prefix) {
+            fprintf(stderr, "Not yet: OP_JCXZ");
+            exit(1);
+        }
         else if((byte1 & OP_MOV_RGM_SRG.mask) == OP_MOV_RGM_SRG.prefix) {
             strcpy(inst_str, "mov");
             u8 byte2    = data[++i];
             fprintf(stderr, "Not yet: OP_MOV_RGM_SRG");
             exit(1);
-
         }
         else if((byte1 & OP_MOV_SRG_RGM.mask) == OP_MOV_SRG_RGM.prefix) {
             strcpy(inst_str, "mov");
             u8 byte2    = data[++i];
             fprintf(stderr, "Not yet: OP_MOV_SRG_RGM");
             exit(1);
-
         }
         else {
             fprintf(stderr, "Unknown instruction: %d (%s)\n", byte1, u8_to_str(byte1));
