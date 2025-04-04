@@ -7,6 +7,14 @@ if [ $# -ne 1 ]; then
 fi
 
 input_file=$1
+
+if [[ "$input_file" == *.asm ]]; then
+  echo "Usage: $0 input_binary_file"
+  echo "ERROR: Input file $input_file appears to be an ASM file, not a binary file."
+  echo "Please provide a binary file instead."
+  exit 1
+fi
+
 temp_asm_file=$(mktemp --suffix=.asm)
 temp_obj_file=$(mktemp --suffix=.obj)
 

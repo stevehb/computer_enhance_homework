@@ -1,3 +1,5 @@
+tester*
+
 # CLion specific
 .idea/
 cmake-build-*/
