@@ -15,9 +15,9 @@
 //#define DEFAULT_FILENAME    "hw/listing_0037_single_register_mov"
 //#define DEFAULT_FILENAME    "hw/listing_0038_many_register_mov"
 //#define DEFAULT_FILENAME    "hw/listing_0039_more_movs"
-#define DEFAULT_FILENAME    "hw/listing_0040_challenge_movs"
+//#define DEFAULT_FILENAME    "hw/listing_0040_challenge_movs"
 //#define DEFAULT_FILENAME    "hw/listing_0041_add_sub_cmp_jnz"
-//#define DEFAULT_FILENAME "tester"
+#define DEFAULT_FILENAME "tester"
 
 
 const char* getRegStr(u8 reg, u8 w) {
@@ -196,7 +196,6 @@ ParsedInst parseInstruction(u8* ptr, InstDesc desc) {
         u8 value = getBitValue(ptr, bitField);
         switch(bitField.type) {
             case BF_NONE:
-            case BF_LIT:
             case BF_COUNT:  break;
             case BF_SIGN:   pi.hasS = true;   pi.s = value;   break;
             case BF_WORD:   pi.hasW = true;   pi.w = value;   break;
@@ -204,6 +203,7 @@ ParsedInst parseInstruction(u8* ptr, InstDesc desc) {
             case BF_MOD:    pi.hasMod = true; pi.mod = value; break;
             case BF_REG:    pi.hasReg = true; pi.reg = value; break;
             case BF_RGM:    pi.hasRgm = true; pi.rgm = value; break;
+            case BF_LIT:    pi.hasLit = true; pi.lit = value; break;
         }
         opCodeBytes = MAX(opCodeBytes, (bitField.byte + 1));
     }
@@ -219,14 +219,12 @@ ParsedInst parseInstruction(u8* ptr, InstDesc desc) {
         }
     }
 
-    // IMMEDIATE is always the last value, so read the REG/RGM first
     else if(desc.hasImm && pi.hasReg) {
         additionalBytes += writeRegStr(pi.reg, pi.w, pi.dst);
         additionalBytes += writeImmediate(ptr + opCodeBytes + additionalBytes, pi.s, pi.w, desc.isImmAddr, false, pi.src);
     }
 
     else if(desc.hasImm && pi.hasRgm) {
-        // FIXME: the srcNeedsSize needs to be false if dstNeedsSize is true, otherwise depends on pi.mod
         bool dstNeedsSize = desc.forceDstSize;
         bool srcNeedsSize = !dstNeedsSize && (pi.mod != 0b11);
         additionalBytes += writeRgmStr(ptr, pi.w, pi.mod, pi.rgm, dstNeedsSize, pi.dst);
@@ -243,6 +241,16 @@ ParsedInst parseInstruction(u8* ptr, InstDesc desc) {
         additionalBytes += writeImmediate(ptr + opCodeBytes + additionalBytes, pi.s, pi.w, desc.isImmAddr, false, pi.src);
     }
 
+    else if(desc.hasImm && pi.hasLit) {
+        // @stevehb(2025-Apr-04): Assume this is a JMP.
+        //  This format makes it NASM-binary compatible.
+        //    https://www.computerenhance.com/p/opcode-patterns-in-8086-arithmetic/comment/13475922
+        //  and especially
+        //    https://www.computerenhance.com/p/opcode-patterns-in-8086-arithmetic/comment/13522357
+        sprintf(pi.dst, "($+2)%+d", ((s8) pi.lit));
+        pi.src[0] = '\0';
+    }
+
     else if(desc.isAccSrc || desc.isAccDst) {
         additionalBytes += writeRegStr(0b000, pi.w, desc.isAccSrc ? pi.src : pi.dst);
         additionalBytes += writeImmediate(ptr + opCodeBytes + additionalBytes, pi.s, pi.w, desc.isImmAddr, pi.hasRgm, desc.isAccSrc ? pi.dst : pi.src);
@@ -255,7 +263,9 @@ ParsedInst parseInstruction(u8* ptr, InstDesc desc) {
 char* parsedInstToStr(ParsedInst parsed) {
     InstDesc desc = instructionDescriptors[parsed.id];
     char* str = (char*) next_scratch;
-    sprintf(str, "%s %s, %s", desc.instStr, parsed.dst, parsed.src);
+    int srcLen = strlen(parsed.src);
+    char* sep = srcLen == 0 ? "" : ", ";
+    sprintf(str, "%s %s%s%s", desc.instStr, parsed.dst, sep, parsed.src);
     next_scratch += strlen(str) + 1;
     return str;
 }
@@ -307,13 +317,11 @@ int main(int argc, const char** argv) {
         next_scratch = scratch;
 
         u8* data = fileData + i;
-//        fprintf(out, "[%d] Next inst: %s %s %s %s\n", i, byteToBinaryStr(*data), byteToBinaryStr(*(data+1)), byteToBinaryStr(*(data+2)), byteToBinaryStr(*(data+3)));
         int descIdx = findInstOpCodeMatch(data);
         if (descIdx == -1) {
             fprintf(stderr, "Failed to match instruction for bytes: %s\n", bytesToBinaryStr(data, 6));
             exit(1);
         }
-//        fprintf(out, "[%d] Found %s\n", i, instTypeStrs[descIdx]);
 
         InstDesc desc = instructionDescriptors[descIdx];
         ParsedInst parsed = parseInstruction(data, desc);
