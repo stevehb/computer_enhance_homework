@@ -16,8 +16,8 @@
 //#define DEFAULT_FILENAME    "hw/listing_0038_many_register_mov"
 //#define DEFAULT_FILENAME    "hw/listing_0039_more_movs"
 //#define DEFAULT_FILENAME    "hw/listing_0040_challenge_movs"
-//#define DEFAULT_FILENAME    "hw/listing_0041_add_sub_cmp_jnz"
-#define DEFAULT_FILENAME "tester"
+#define DEFAULT_FILENAME    "hw/listing_0041_add_sub_cmp_jnz"
+//#define DEFAULT_FILENAME "tester"
 
 
 const char* getRegStr(u8 reg, u8 w) {
@@ -247,7 +247,7 @@ ParsedInst parseInstruction(u8* ptr, InstDesc desc) {
         //    https://www.computerenhance.com/p/opcode-patterns-in-8086-arithmetic/comment/13475922
         //  and especially
         //    https://www.computerenhance.com/p/opcode-patterns-in-8086-arithmetic/comment/13522357
-        sprintf(pi.dst, "($+2)%+d", ((s8) pi.lit));
+        sprintf(pi.dst, "($+%d)%+d", opCodeBytes, ((s8) pi.lit));
         pi.src[0] = '\0';
     }
 
@@ -332,7 +332,6 @@ int main(int argc, const char** argv) {
         i += parsed.bytesRead;
 
         char* line = parsedInstToStr(parsed);
-//        fprintf(out, "%03d: %s\n", instCount, line);
         fprintf(out, "%s\n", line);
         instCount++;
     }

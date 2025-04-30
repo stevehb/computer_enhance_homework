@@ -16,13 +16,13 @@ typedef __uint128_t u128;
 
 #define BIT_FIELD_MAP(X) \
     X(BF_NONE, "BF_NONE") \
-    X(BF_LIT, "BF_LIT") \
+    X(BF_LIT,  "BF_LIT") \
     X(BF_SIGN, "BF_SIGN") \
     X(BF_WORD, "BF_WORD") \
-    X(BF_DIR, "BF_DIR") \
-    X(BF_MOD, "BF_MOD") \
-    X(BF_REG, "BF_REG") \
-    X(BF_RGM, "BF_RGM")
+    X(BF_DIR,  "BF_DIR") \
+    X(BF_MOD,  "BF_MOD") \
+    X(BF_REG,  "BF_REG") \
+    X(BF_RGM,  "BF_RGM")
 
 typedef enum {
 #define X(K, N) K,
@@ -94,10 +94,6 @@ typedef struct OpCode {
     Bits where;
     u8 value;
 } OpCode;
-typedef struct Parameter {
-    bool isSrc, isRgm, isDisp, isData, isAddr;
-    u16 value;
-} Parameter;
 typedef struct InstDesc {
     InstType type;
     const char* instStr;
@@ -182,7 +178,7 @@ static_assert(sizeof(instructionDescriptors)/sizeof(instructionDescriptors[0]) =
 #undef S
 #undef LIT
 
-typedef struct {
+typedef struct ParsedInst {
     InstType id;
     u32 bytesRead;
     bool hasW :1;   u8 w: 1;
