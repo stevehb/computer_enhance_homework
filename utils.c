@@ -1,6 +1,7 @@
 //
 // Created by stevehb on 02-Apr-25.
 //
+#include <stdarg.h>
 
 static u8 scratch[BUFF_SIZE];
 static u8* next_scratch = scratch;
@@ -50,4 +51,20 @@ char* bytesToHexStr(u8* bytes, int size) {
     }
     next_scratch += (ptr - start);
     return start;
+}
+
+int sprintfcat(char *dst, const char *format, ...) {
+    size_t len = strlen(dst);
+    va_list args;
+    va_start(args, format);
+    int result = vsprintf(dst + len, format, args);
+    va_end(args);
+    return result;
+}
+int str_prepend(char* dst, const char* src) {
+    int dstLen = strlen(dst);
+    int srcLen = strlen(src);
+    memmove(dst + srcLen, dst, dstLen + 1);
+    memcpy(dst, src, srcLen);
+    return strlen(dst);
 }

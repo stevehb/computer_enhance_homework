@@ -6,166 +6,229 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define BUFF_SIZE           10240
+#define BUFF_SIZE       10240
+#define MAX_INST_COUNT  128
 
 #include "types.c"
 #include "utils.c"
-
 
 //#define DEFAULT_FILENAME    "hw/listing_0037_single_register_mov"
 //#define DEFAULT_FILENAME    "hw/listing_0038_many_register_mov"
 //#define DEFAULT_FILENAME    "hw/listing_0039_more_movs"
 //#define DEFAULT_FILENAME    "hw/listing_0040_challenge_movs"
-#define DEFAULT_FILENAME    "hw/listing_0041_add_sub_cmp_jnz"
-//#define DEFAULT_FILENAME "tester"
+//#define DEFAULT_FILENAME    "hw/listing_0041_add_sub_cmp_jnz"
+#define DEFAULT_FILENAME    "tester"
 
-
-const char* getRegStr(u8 reg, u8 w) {
-    u8 ident = (w << 3) | reg;
-    switch (ident) {
-        case 0b0000: return "al";
-        case 0b0001: return "cl";
-        case 0b0010: return "dl";
-        case 0b0011: return "bl";
-        case 0b0100: return "ah";
-        case 0b0101: return "ch";
-        case 0b0110: return "dh";
-        case 0b0111: return "bh";
-        case 0b1000: return "ax";
-        case 0b1001: return "cx";
-        case 0b1010: return "dx";
-        case 0b1011: return "bx";
-        case 0b1100: return "sp";
-        case 0b1101: return "bp";
-        case 0b1110: return "si";
-        case 0b1111: return "di";
-        default: {
-            fprintf(stderr, "Unknown values for reg=%d and w=%d", reg, w);
-            exit(1);
-        }
-    }
-}
-int writeRegStr(u8 reg, u8 w, char *outStr) {
-    strcpy(outStr, getRegStr(reg, w));
-    return 0;
-}
-
-
-int writeRgmStr(u8 *ptr, u8 w, u8 mod, u8 rgm, u8 writeSize, char *outStr) {
-    int extraBytesRead = 0;
-
-    if(writeSize) {
-        sprintf(outStr + strlen(outStr), "%s ", w ? "word" : "byte");
-    }
-
-    // Handle simple register interpretation
-    if(mod == 0b11) {
-        extraBytesRead = writeRegStr(rgm, w, outStr + strlen(outStr));
-        return extraBytesRead;
-    }
-
-    // Handle "direct address" special case
-    if(mod == 0b00 && rgm == 0b110) {
-        u8 byte3 = ptr[2];
-        extraBytesRead++;
-        u8 byte4 = 0;
-        if(w == 1) {
-            byte4 = ptr[3];
-            extraBytesRead++;
-        } else {
-            fprintf(stderr, "WARNING: Unexpected 1-byte displacement in direct address! Accommodate this case?");
-            exit(1);
-        }
-        sprintf(outStr + strlen(outStr), "[%d]", (byte4 << 8) | byte3);
-        return extraBytesRead;
-    }
-
-
-    // Set prefix
-    switch(rgm) {
-    case 0b000: sprintf(outStr + strlen(outStr), "[bx + si"); break;
-    case 0b001: sprintf(outStr + strlen(outStr), "[bx + di"); break;
-    case 0b010: sprintf(outStr + strlen(outStr), "[bp + si"); break;
-    case 0b011: sprintf(outStr + strlen(outStr), "[bp + di"); break;
-    case 0b100: sprintf(outStr + strlen(outStr), "[si"); break;
-    case 0b101: sprintf(outStr + strlen(outStr), "[di"); break;
-    case 0b110: sprintf(outStr + strlen(outStr), "[bp"); break;
-    case 0b111: sprintf(outStr + strlen(outStr), "[bx"); break;
-    default: {
-        fprintf(stderr, "Unknown rgm identifier: rgm=%s\n", byteToBinaryStr(rgm));
-        exit(1);
-    }
-    }
-
-    if(mod == 0b01) {
-        // Add 8-bit displacement
-        u8 byte3 = ptr[2];
-        extraBytesRead++;
-        if (byte3 != 0) {
-            s8 sbyte3 = (s8) byte3;
-            char sign = sbyte3 >= 0 ? '+' : '-';
-            sbyte3 = sbyte3 < 0 ? -sbyte3 : sbyte3;
-            sprintf(outStr + strlen(outStr), " %c %d", sign, sbyte3);
-        }
-    } else if(mod == 0b10) {
-        // Add 16-bit displacement
-        u8 byte3 = ptr[2];
-        extraBytesRead++;
-        u8 byte4 = ptr[3];
-        extraBytesRead++;
-        s16 disp16 = (byte4 << 8) | byte3;
-        if(disp16 != 0) {
-            char sign = disp16 >= 0 ? '+' : '-';
-            disp16 = disp16 < 0 ? -disp16 : disp16;
-            sprintf(outStr + strlen(outStr), " %c %d", sign, disp16);
-        }
-    }
-
-    sprintf(outStr + strlen(outStr), "%c", ']');
-    return extraBytesRead;
-}
-s16 getImmediateValue(u8* ptr, u8 isWord) {
-    s16 imm = 0;
-    s8 loByte = *ptr;
-    if(!isWord) {
-        imm = loByte;
-    } else {
-        s8 hiByte = *(ptr+1);
-        imm = (hiByte << 8) | (u8) loByte;
-    }
-    return imm;
-}
-int writeImmediate(u8* ptr, u8 s, u8 w, bool isImmAddr, bool writeSize, char* outStr) {
-    int extraBytesRead = 0;
-    char* addrL = isImmAddr ? "[" : "";
-    char* addrR = isImmAddr ? "]" : "";
-    char* sizeSpec = "";
-    bool isWord = w == 1 && s == 0;
-    s16 imm = 0;
-    s8 byte1 = *ptr;
-    extraBytesRead++;
-    if(!isWord) {
-        imm = byte1;
-        sizeSpec = writeSize ? "byte " : "";
-    } else {
-        s8 byte2 = *(ptr+1);
-        extraBytesRead++;
-        imm = (s16) ((byte2 << 8) | (u8) byte1);
-        sizeSpec = writeSize ? "word " : "";
-    }
-    sprintf(outStr, "%s%s%d%s", addrL, sizeSpec, imm, addrR);
-    return extraBytesRead;
-}
-
-u8 getBitValue(u8* ptr, Bits bits) {
+u8 getBitValue(u8* ptr, BitField bits) {
     if(bits.type == BF_NONE || bits.type == BF_COUNT) {
         const char* type_str = (bits.type == BF_NONE) ? "BF_NONE" : "BF_COUNT";
-        fprintf(stderr, "Error: Invalid bits type %s\n", type_str);
+        fprintf(stderr, "ERROR: Invalid bits action %s\n", type_str);
         exit(1);
     }
     u8 byte = *(ptr + bits.byte);
     return (byte >> bits.shr) & bits.and;
 }
+
+void makeRegOpd(Operand* op, u8 reg, u8 w) {
+    op->type = OPD_REG;
+    op->regOpd.regIdx = (w << 3) | reg;
+    if(op->regOpd.regIdx >= REG_COUNT) {
+        fprintf(stderr, "Unknown values for regIdx=%d and w=%d", reg, w);
+        exit(1);
+    }
+    strcat(op->str, registerNameStrs[op->regOpd.regIdx]);
+}
+void makeRgmOpd(Operand* op, u8 rgm, u8 w, u8 mod, bool writeSize, u8 dispLo, u8 dispHi) {
+    if(writeSize) {
+        strcat(op->str, w ? "word " : "byte ");
+    }
+    if(mod == 0b11) {
+        makeRegOpd(op, rgm, w);
+        op->regOpd.writeSize = writeSize;
+        return;
+    }
+
+    op->type = OPD_DISP;
+    op->dispOpd.writeSize = writeSize;
+    if(mod == 0b00 && rgm == 0b110) {
+        op->dispOpd.eaIdx = EA_COUNT;
+        // TODO: Do we need to check the `w` flag here?
+        op->dispOpd.disp = (dispHi << 8) | dispLo;
+        sprintfcat(op->str, "[%d]", op->dispOpd.disp);
+        return;
+    }
+
+    op->dispOpd.eaIdx = rgm;
+    op->dispOpd.disp = mod == 0b01 ? (s8) dispLo : (dispHi << 8) | dispLo;
+    op->dispOpd.sign = op->dispOpd.disp >= 0 ? '+' : '-';
+    op->dispOpd.disp = op->dispOpd.disp < 0 ? -op->dispOpd.disp : op->dispOpd.disp;
+    sprintfcat(op->str, "[%s", effectiveAddrStrs[op->dispOpd.eaIdx]);
+    if(op->dispOpd.disp != 0) {
+        sprintfcat(op->str, " %c %d", op->dispOpd.sign, op->dispOpd.disp);
+    }
+    strcat(op->str, "]");
+}
+void makeAddrOpd(Operand* op, u8 addrLo, u8 addrHi) {
+    op->type = OPD_ADDR;
+    op->addrOpd.addr = (addrHi << 8) | addrLo;
+    sprintfcat(op->str, "[%d]", op->addrOpd.addr);
+}
+void makeImmOpd(Operand *op, u8 w, u8 s, bool writeSize, u8 dataLo, u8 dataHi) {
+    op->type = OPD_DATA;
+    op->dataOpd.writeSize = writeSize;
+    op->dataOpd.data = w ? (dataHi << 8) | dataLo : (s8) dataLo;
+    char* sizeStr = writeSize ? (w ? "word " : "byte ") : "";
+    sprintfcat(op->str, "%s%d", sizeStr, op->dataOpd.data);
+}
+
+
+
+ParsedInst parseInstruction(u8* ptr, InstDesc desc) {
+    ParsedInst pi = { 0 };
+    pi.type = desc.type;
+    pi.action = INST_ACTION[desc.type];
+
+    /*
+     * READ OP-CODE BITFIELDS
+     */
+    u8 byteCount = 0;
+    for(int i = 0; i < BF_COUNT; i++) {
+        BitField bitField = desc.fields[i];
+        if(bitField.type == BF_NONE) continue;
+        switch(bitField.type) {
+            case BF_SIGN:   pi.s = getBitValue(ptr, bitField);   break;
+            case BF_WORD:   pi.w = getBitValue(ptr, bitField);   break;
+            case BF_DIR:    pi.d = getBitValue(ptr, bitField);   break;
+            case BF_MOD:    pi.mod = getBitValue(ptr, bitField); break;
+            case BF_REG:    pi.reg = getBitValue(ptr, bitField); break;
+            case BF_RGM:    pi.rgm = getBitValue(ptr, bitField); break;
+            default:
+                break;
+        }
+        byteCount = MAX(byteCount, (bitField.byte + 1));
+    }
+
+    /*
+     * READ EXTENDED BITFIELDS
+     */
+    bool hasDisp = desc.fields[BF_DISP].type == BF_DISP;
+    bool hasData = desc.fields[BF_DATA].type == BF_DATA;
+    bool hasAddr = desc.fields[BF_ADDR].type == BF_ADDR;
+    bool hasInc8 = desc.fields[BF_INC8].type == BF_INC8;
+    if(hasDisp) {
+        // This is always a RGM-based read
+        u8 bytesRead = 0;
+        if(pi.mod == 0b01) {
+            pi.dispLo = *(ptr + byteCount);
+            pi.dispHi = 0;
+            bytesRead = 1;
+        } else if(pi.mod == 0b10 || (pi.mod == 0b00 && pi.rgm == 0b110)) {
+            pi.dispLo = *(ptr + byteCount);
+            pi.dispHi = *(ptr + byteCount + 1);
+            bytesRead = 2;
+        }
+        byteCount += bytesRead;
+    }
+    if(hasData) {
+        u8 bytesRead = 0;
+        pi.dataLo = *(ptr + byteCount);
+        bytesRead++;
+        if(pi.s == 0 && pi.w == 1) {
+            pi.dataHi = *(ptr + byteCount + 1);
+            bytesRead++;
+        }
+        if(pi.s && pi.w) {
+            // Add sign extension if needed
+            s16 tmp = (s8) pi.dataLo;
+            pi.dataHi = (tmp >> 8) & 0xFF;
+        }
+        byteCount += bytesRead;
+    }
+    if(hasAddr) {
+        pi.addrLo = *(ptr + byteCount);
+        pi.addrHi = *(ptr + byteCount + 1);
+        byteCount += 2;
+    }
+    if(hasInc8) {
+        pi.inc8 = *(ptr + byteCount);
+        byteCount++;
+    }
+    pi.bytesRead = byteCount;
+
+    /*
+     * MAKE THE OPERANDS
+     */
+    bool hasReg = desc.fields[BF_REG].type == BF_REG;
+    bool hasRgm = desc.fields[BF_RGM].type == BF_RGM;
+    if(desc.isAccSrc || desc.isAccDst) {
+        pi.reg = 0b000;
+        hasReg = true;
+    }
+
+    // JMP_*
+    if(pi.action == JMP && hasInc8) {
+        pi.src.type = OPD_NOOP;  // Won't be printed
+        pi.dst.type = OPD_INC8;
+        pi.dst.inc8Opd.inc8 = (s8) pi.inc8;
+        sprintfcat(pi.dst.str, "($+%d)%+d", byteCount, pi.dst.inc8Opd.inc8);
+        return pi;
+    }
+
+    // MOV_MEM_ACC, MOV_ACC_MEM
+    if(hasAddr) {
+        if(desc.isAccSrc) {
+            makeRegOpd(&pi.src, pi.reg, pi.w);
+            makeAddrOpd(&pi.dst, pi.addrLo, pi.addrHi);
+        } else {
+            makeAddrOpd(&pi.src, pi.addrLo, pi.addrHi);
+            makeRegOpd(&pi.dst, pi.reg, pi.w);
+        }
+        return pi;
+    }
+
+    // MOV_RGM_REG, ADD_RGM_REG, SUB_RGM_REG, CMP_RGM_REG
+    if(hasReg && hasRgm) {
+        if(pi.d == 0) {
+            makeRegOpd(&pi.src, pi.reg, pi.w);
+            makeRgmOpd(&pi.dst, pi.rgm, pi.w, pi.mod, false, pi.dispLo, pi.dispHi);
+        } else {
+            makeRgmOpd(&pi.src, pi.rgm, pi.w, pi.mod, false, pi.dispLo, pi.dispHi);
+            makeRegOpd(&pi.dst, pi.reg, pi.w);
+        }
+        return pi;
+    }
+
+    // MOV_IMM_RGM, ADD_IMM_RGM, SUB_IMM_RGM, CMP_IMM_RGM
+    if(hasData && hasDisp) {
+        bool dstSize = desc.forceDstSize && (pi.mod != 0b11);
+        bool srcSize = !dstSize && (pi.mod != 0b11);
+        makeImmOpd(&pi.src, pi.w, pi.s, srcSize, pi.dataLo, pi.dataHi);
+        makeRgmOpd(&pi.dst, pi.rgm, pi.w, pi.mod, dstSize, pi.dispLo, pi.dispHi);
+        return pi;
+    }
+
+    // MOV_IMM_REG, ADD_IMM_ACC, SUB_IMM_ACC, CMP_IMM_ACC
+    if(hasData && hasReg) {
+        makeImmOpd(&pi.src, pi.w, pi.s, false, pi.dataLo, pi.dataHi);
+        makeRegOpd(&pi.dst, pi.reg, pi.w);
+        return pi;
+    }
+
+    fprintf(stderr, "Failed to parse instruction: %s", bytesToBinaryStr(ptr, 6));
+    fprintf(stderr, "Got: %s hasReg=%s, hasRgm=%s, hasDisp=%s, hasData=%s, hasAddr=%s, hasInc8=%s", instTypeStrs[desc.type],
+            BOOL_STR(hasReg), BOOL_STR(hasRgm), BOOL_STR(hasDisp), BOOL_STR(hasData), BOOL_STR(hasAddr), BOOL_STR(hasInc8));
+    exit(1);
+}
+
+char* parsedInstToStr(ParsedInst parsed) {
+    InstDesc desc = instructionDescriptors[parsed.type];
+    char* str = (char*) next_scratch;
+    char* sep = parsed.src.type == OPD_NOOP ? "" : ", ";
+    sprintf(str, "%s %s%s%s", desc.instStr, parsed.dst.str, sep, parsed.src.str);
+    next_scratch += strlen(str) + 1;
+    return str;
+}
+
 int findInstOpCodeMatch(u8* ptr) {
     for (int j = 0; j < ID_COUNT; j++) {
         InstDesc desc = instructionDescriptors[j];
@@ -182,94 +245,9 @@ int findInstOpCodeMatch(u8* ptr) {
             return j;
         }
     }
-    return -1;
+    fprintf(stderr, "ERROR: No instruction match for %s\n", bytesToBinaryStr(ptr, 6));
+    exit(1);
 }
-
-ParsedInst parseInstruction(u8* ptr, InstDesc desc) {
-    ParsedInst pi = { 0 };
-    pi.id = desc.type;
-
-    u8 opCodeBytes = 0;
-    for(int i = 0; i < BF_COUNT; i++) {
-        Bits bitField = desc.fields[i];
-        if(bitField.type == BF_NONE || bitField.type == BF_COUNT) continue;
-        u8 value = getBitValue(ptr, bitField);
-        switch(bitField.type) {
-            case BF_NONE:
-            case BF_COUNT:  break;
-            case BF_SIGN:   pi.hasS = true;   pi.s = value;   break;
-            case BF_WORD:   pi.hasW = true;   pi.w = value;   break;
-            case BF_DIR:    pi.hasD = true;   pi.d = value;   break;
-            case BF_MOD:    pi.hasMod = true; pi.mod = value; break;
-            case BF_REG:    pi.hasReg = true; pi.reg = value; break;
-            case BF_RGM:    pi.hasRgm = true; pi.rgm = value; break;
-            case BF_LIT:    pi.hasLit = true; pi.lit = value; break;
-        }
-        opCodeBytes = MAX(opCodeBytes, (bitField.byte + 1));
-    }
-
-    u8 additionalBytes = 0;
-    if(pi.hasReg && pi.hasRgm) {
-        if(pi.d == 0) {
-            additionalBytes += writeRegStr(pi.reg, pi.w, pi.src);
-            additionalBytes += writeRgmStr(ptr, pi.w, pi.mod, pi.rgm, desc.forceDstSize, pi.dst);
-        } else {
-            additionalBytes += writeRgmStr(ptr, pi.w, pi.mod, pi.rgm, false, pi.src);
-            additionalBytes += writeRegStr(pi.reg, pi.w, pi.dst);
-        }
-    }
-
-    else if(desc.hasImm && pi.hasReg) {
-        additionalBytes += writeRegStr(pi.reg, pi.w, pi.dst);
-        additionalBytes += writeImmediate(ptr + opCodeBytes + additionalBytes, pi.s, pi.w, desc.isImmAddr, false, pi.src);
-    }
-
-    else if(desc.hasImm && pi.hasRgm) {
-        bool dstNeedsSize = desc.forceDstSize;
-        bool srcNeedsSize = !dstNeedsSize && (pi.mod != 0b11);
-        additionalBytes += writeRgmStr(ptr, pi.w, pi.mod, pi.rgm, dstNeedsSize, pi.dst);
-        additionalBytes += writeImmediate(ptr + opCodeBytes + additionalBytes, pi.s, pi.w, desc.isImmAddr, srcNeedsSize, pi.src);
-    }
-
-    else if(desc.hasImm && desc.isAccSrc) {
-        additionalBytes += writeRegStr(0b000, pi.w, pi.src);
-        additionalBytes += writeImmediate(ptr + opCodeBytes + additionalBytes, pi.s, pi.w, desc.isImmAddr, false, pi.dst);
-    }
-
-    else if(desc.hasImm && desc.isAccDst) {
-        additionalBytes += writeRegStr(0b000, pi.w, pi.dst);
-        additionalBytes += writeImmediate(ptr + opCodeBytes + additionalBytes, pi.s, pi.w, desc.isImmAddr, false, pi.src);
-    }
-
-    else if(desc.hasImm && pi.hasLit) {
-        // @stevehb(2025-Apr-04): Assume this is a JMP.
-        //  This format makes it NASM-binary compatible.
-        //    https://www.computerenhance.com/p/opcode-patterns-in-8086-arithmetic/comment/13475922
-        //  and especially
-        //    https://www.computerenhance.com/p/opcode-patterns-in-8086-arithmetic/comment/13522357
-        sprintf(pi.dst, "($+%d)%+d", opCodeBytes, ((s8) pi.lit));
-        pi.src[0] = '\0';
-    }
-
-    else if(desc.isAccSrc || desc.isAccDst) {
-        additionalBytes += writeRegStr(0b000, pi.w, desc.isAccSrc ? pi.src : pi.dst);
-        additionalBytes += writeImmediate(ptr + opCodeBytes + additionalBytes, pi.s, pi.w, desc.isImmAddr, pi.hasRgm, desc.isAccSrc ? pi.dst : pi.src);
-    }
-
-    pi.bytesRead = opCodeBytes + additionalBytes;
-    return pi;
-}
-
-char* parsedInstToStr(ParsedInst parsed) {
-    InstDesc desc = instructionDescriptors[parsed.id];
-    char* str = (char*) next_scratch;
-    int srcLen = strlen(parsed.src);
-    char* sep = srcLen == 0 ? "" : ", ";
-    sprintf(str, "%s %s%s%s", desc.instStr, parsed.dst, sep, parsed.src);
-    next_scratch += strlen(str) + 1;
-    return str;
-}
-
 
 int main(int argc, const char** argv) {
     setbuf(stdout, NULL);
@@ -297,7 +275,7 @@ int main(int argc, const char** argv) {
             fprintf(stderr, "Failed to read file %s: %s\n", filename, strerror(errno));
             exit(1);
         }
-        if(fileDataSize == BUFF_SIZE) {
+        if(fileDataSize >= BUFF_SIZE) {
             fprintf(stderr, "Failed to read entire file of %s: increase BUFF_SIZE past %d\n", filename, BUFF_SIZE);
             exit(1);
         }
@@ -311,6 +289,7 @@ int main(int argc, const char** argv) {
     }
 
     // Decode
+    ParsedInst program[MAX_INST_COUNT];
     int instCount = 0;
     for(int i = 0; i < fileDataSize; /* INCREMENT IN LOOP */) {
         memset(scratch, 0, BUFF_SIZE);
@@ -333,7 +312,8 @@ int main(int argc, const char** argv) {
 
         char* line = parsedInstToStr(parsed);
         fprintf(out, "%s\n", line);
-        instCount++;
+
+        program[instCount++] = parsed;
     }
 
     return 0;
