@@ -310,3 +310,17 @@ typedef struct ParsedInst {
     u8 addrLo, addrHi;
     Operand src, dst;
 } ParsedInst;
+
+
+typedef struct {
+    u8 hi, lo;
+} RegHiLo;
+typedef union  {
+    u16 x;
+    RegHiLo hl;
+} CompReg;
+
+typedef struct {
+    u16 ax, bx, cx, dx;
+    u16 sp, bp, si, di;
+} Computer;

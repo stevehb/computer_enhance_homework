@@ -17,7 +17,9 @@
 //#define DEFAULT_FILENAME    "hw/listing_0039_more_movs"
 //#define DEFAULT_FILENAME    "hw/listing_0040_challenge_movs"
 //#define DEFAULT_FILENAME    "hw/listing_0041_add_sub_cmp_jnz"
-#define DEFAULT_FILENAME    "tester"
+//#define DEFAULT_FILENAME    "hw/listing_0043_immediate_movs"
+#define DEFAULT_FILENAME    "hw/listing_0044_register_movs"
+//#define DEFAULT_FILENAME    "hw/listing_0045_challenge_register_movs"
 
 u8 getBitValue(u8* ptr, BitField bits) {
     if(bits.type == BF_NONE || bits.type == BF_COUNT) {
@@ -249,6 +251,90 @@ int findInstOpCodeMatch(u8* ptr) {
     exit(1);
 }
 
+u16 regRead(Computer* comp, RegisterEnum regIdx) {
+    switch(regIdx) {
+        case REG_AL: return (comp->ax & 0x00ff);
+        case REG_BL: return (comp->bx & 0x00ff);
+        case REG_CL: return (comp->cx & 0x00ff);
+        case REG_DL: return (comp->dx & 0x00ff);
+        case REG_AH: return (comp->ax & 0xff00) >> 8;
+        case REG_BH: return (comp->bx & 0xff00) >> 8;
+        case REG_CH: return (comp->cx & 0xff00) >> 8;
+        case REG_DH: return (comp->dx & 0xff00) >> 8;
+        case REG_AX: return comp->ax;
+        case REG_BX: return comp->bx;
+        case REG_CX: return comp->cx;
+        case REG_DX: return comp->dx;
+        case REG_SP: return comp->sp;
+        case REG_BP: return comp->bp;
+        case REG_SI: return comp->si;
+        case REG_DI: return comp->di;
+        case REG_COUNT:
+            fprintf(stderr, "ERROR: Invalid register index %d (REG_COUNT=%d)\n", regIdx, REG_COUNT);
+            exit(1);
+    }
+}
+u16 regWrite(Computer* comp, RegisterEnum regIdx, u16 value) {
+    s16 oldValue = 0;
+    switch(regIdx) {
+        case REG_AL: oldValue = (comp->ax & 0x00ff); comp->ax = (comp->ax & 0xff00) | (value & 0x00ff); break;
+        case REG_BL: oldValue = (comp->bx & 0x00ff); comp->bx = (comp->bx & 0xff00) | (value & 0x00ff); break;
+        case REG_CL: oldValue = (comp->cx & 0x00ff); comp->cx = (comp->cx & 0xff00) | (value & 0x00ff); break;
+        case REG_DL: oldValue = (comp->dx & 0x00ff); comp->dx = (comp->dx & 0xff00) | (value & 0x00ff); break;
+        case REG_AH: oldValue = (comp->ax & 0xff00) >> 8; comp->ax = (comp->ax & 0x00ff) | (value & 0xff00); break;
+        case REG_BH: oldValue = (comp->bx & 0xff00) >> 8; comp->bx = (comp->bx & 0x00ff) | (value & 0xff00); break;
+        case REG_CH: oldValue = (comp->cx & 0xff00) >> 8; comp->cx = (comp->cx & 0x00ff) | (value & 0xff00); break;
+        case REG_DH: oldValue = (comp->dx & 0xff00) >> 8; comp->dx = (comp->dx & 0x00ff) | (value & 0xff00); break;
+        case REG_AX: oldValue = comp->ax; comp->ax = value; break;
+        case REG_BX: oldValue = comp->bx; comp->bx = value; break;
+        case REG_CX: oldValue = comp->cx; comp->cx = value; break;
+        case REG_DX: oldValue = comp->dx; comp->dx = value; break;
+        case REG_SP: oldValue = comp->sp; comp->sp = value; break;
+        case REG_BP: oldValue = comp->bp; comp->bp = value; break;
+        case REG_SI: oldValue = comp->si; comp->si = value; break;
+        case REG_DI: oldValue = comp->di; comp->di = value; break;
+        case REG_COUNT:
+            fprintf(stderr, "ERROR: Invalid register index %d (REG_COUNT=%d)\n", regIdx, REG_COUNT);
+            exit(1);
+    }
+    return oldValue;
+}
+
+
+
+char* executeInst(Computer* comp, ParsedInst pi) {
+    char* str = next_scratch;
+
+    switch(pi.action) {
+        case MOV:
+            if(pi.dst.type == OPD_REG && pi.src.type == OPD_DATA) {
+                RegisterEnum regIdx = pi.dst.regOpd.regIdx;
+                u16 newValue = pi.src.dataOpd.data;
+                u16 oldValue = regWrite(comp, regIdx, newValue);
+                sprintfcat(str, "%s: 0x%02x -> 0x%02x", registerNameStrs[regIdx], oldValue, newValue);
+            }
+            if(pi.dst.type == OPD_REG && pi.src.type == OPD_REG) {
+                RegisterEnum dstReg = pi.dst.regOpd.regIdx;
+                RegisterEnum srcReg = pi.src.regOpd.regIdx;
+                u16 srcValue = regRead(comp, srcReg);
+                u16 oldValue = regWrite(comp, dstReg, srcValue);
+                sprintfcat(str, "%s: 0x%02x -> 0x%02x", registerNameStrs[dstReg], oldValue, srcValue);
+            }
+            break;
+        case ADD:
+            break;
+        case SUB:
+            break;
+        case CMP:
+            break;
+        case JMP:
+            break;
+    }
+
+    next_scratch += strlen(str);
+    return str;
+}
+
 int main(int argc, const char** argv) {
     setbuf(stdout, NULL);
     setbuf(stderr, NULL);
@@ -291,11 +377,11 @@ int main(int argc, const char** argv) {
     // Decode
     ParsedInst program[MAX_INST_COUNT];
     int instCount = 0;
-    for(int i = 0; i < fileDataSize; /* INCREMENT IN LOOP */) {
+    for(int fileOffset = 0; fileOffset < fileDataSize; /* INCREMENT IN LOOP */) {
         memset(scratch, 0, BUFF_SIZE);
         next_scratch = scratch;
 
-        u8* data = fileData + i;
+        u8* data = fileData + fileOffset;
         int descIdx = findInstOpCodeMatch(data);
         if (descIdx == -1) {
             fprintf(stderr, "Failed to match instruction for bytes: %s\n", bytesToBinaryStr(data, 6));
@@ -308,13 +394,28 @@ int main(int argc, const char** argv) {
             fprintf(stderr, "Failed to parse instruction: %s: %s", instTypeStrs[desc.type], bytesToHexStr(data, 6));
             exit(1);
         }
-        i += parsed.bytesRead;
-
-        char* line = parsedInstToStr(parsed);
-        fprintf(out, "%s\n", line);
-
+        fileOffset += parsed.bytesRead;
         program[instCount++] = parsed;
     }
 
+    // Run program
+    Computer comp = { 0 };
+    for(int i = 0; i < instCount; i++) {
+        memset(scratch, 0, BUFF_SIZE);
+        next_scratch = scratch;
+        ParsedInst parsed = program[i];
+        char* asmLine = parsedInstToStr(parsed);
+        char* effect = executeInst(&comp, parsed);
+        fprintf(out, "%s    ; %s\n", asmLine, effect);
+    }
+
+    // Final state
+    RegisterEnum registers[] = { REG_AX, REG_BX, REG_CX, REG_DX, REG_SP, REG_BP, REG_SI, REG_DI };
+    fprintf(out, "\nFinal registers:\n");
+    for(int i = 0; i < sizeof(registers) / sizeof (registers[0]); i++) {
+        RegisterEnum ri = registers[i];
+        u16 value = regRead(&comp, ri);
+        fprintf(out, "    %s: 0x%04x (%d)\n", registerNameStrs[ri], value, value);
+    }
     return 0;
 }
