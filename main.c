@@ -18,8 +18,8 @@
 //#define DEFAULT_FILENAME    "hw/listing_0040_challenge_movs"
 //#define DEFAULT_FILENAME    "hw/listing_0041_add_sub_cmp_jnz"
 //#define DEFAULT_FILENAME    "hw/listing_0043_immediate_movs"
-#define DEFAULT_FILENAME    "hw/listing_0044_register_movs"
-//#define DEFAULT_FILENAME    "hw/listing_0045_challenge_register_movs"
+//#define DEFAULT_FILENAME    "hw/listing_0044_register_movs"
+#define DEFAULT_FILENAME    "hw/listing_0045_challenge_register_movs"
 
 u8 getBitValue(u8* ptr, BitField bits) {
     if(bits.type == BF_NONE || bits.type == BF_COUNT) {
@@ -40,6 +40,15 @@ void makeRegOpd(Operand* op, u8 reg, u8 w) {
     }
     strcat(op->str, registerNameStrs[op->regOpd.regIdx]);
 }
+void makeSrgOpd(Operand* op, u8 srg) {
+    op->type = OPD_SRG;
+    op->srgOpd.srgIdx = srg;
+    if(op->srgOpd.srgIdx >= SRG_COUNT) {
+        fprintf(stderr, "Unknown values for srgIdx=%d", srg);
+        exit(1);
+    }
+    strcat(op->str, segmentRegisterStrs[op->srgOpd.srgIdx]);
+}
 void makeRgmOpd(Operand* op, u8 rgm, u8 w, u8 mod, bool writeSize, u8 dispLo, u8 dispHi) {
     if(writeSize) {
         strcat(op->str, w ? "word " : "byte ");
@@ -56,6 +65,7 @@ void makeRgmOpd(Operand* op, u8 rgm, u8 w, u8 mod, bool writeSize, u8 dispLo, u8
         op->dispOpd.eaIdx = EA_COUNT;
         // TODO: Do we need to check the `w` flag here?
         op->dispOpd.disp = (dispHi << 8) | dispLo;
+        op->dispOpd.sign = op->dispOpd.disp >= 0 ? '+' : '-';
         sprintfcat(op->str, "[%d]", op->dispOpd.disp);
         return;
     }
@@ -63,10 +73,10 @@ void makeRgmOpd(Operand* op, u8 rgm, u8 w, u8 mod, bool writeSize, u8 dispLo, u8
     op->dispOpd.eaIdx = rgm;
     op->dispOpd.disp = mod == 0b01 ? (s8) dispLo : (dispHi << 8) | dispLo;
     op->dispOpd.sign = op->dispOpd.disp >= 0 ? '+' : '-';
-    op->dispOpd.disp = op->dispOpd.disp < 0 ? -op->dispOpd.disp : op->dispOpd.disp;
+    u16 uDisp = op->dispOpd.disp < 0 ? -op->dispOpd.disp : op->dispOpd.disp;
     sprintfcat(op->str, "[%s", effectiveAddrStrs[op->dispOpd.eaIdx]);
     if(op->dispOpd.disp != 0) {
-        sprintfcat(op->str, " %c %d", op->dispOpd.sign, op->dispOpd.disp);
+        sprintfcat(op->str, " %c %d", op->dispOpd.sign, uDisp);
     }
     strcat(op->str, "]");
 }
@@ -103,6 +113,7 @@ ParsedInst parseInstruction(u8* ptr, InstDesc desc) {
             case BF_DIR:    pi.d = getBitValue(ptr, bitField);   break;
             case BF_MOD:    pi.mod = getBitValue(ptr, bitField); break;
             case BF_REG:    pi.reg = getBitValue(ptr, bitField); break;
+            case BF_SRG:    pi.srg = getBitValue(ptr, bitField); break;
             case BF_RGM:    pi.rgm = getBitValue(ptr, bitField); break;
             default:
                 break;
@@ -161,6 +172,7 @@ ParsedInst parseInstruction(u8* ptr, InstDesc desc) {
      * MAKE THE OPERANDS
      */
     bool hasReg = desc.fields[BF_REG].type == BF_REG;
+    bool hasSrg = desc.fields[BF_SRG].type == BF_SRG;
     bool hasRgm = desc.fields[BF_RGM].type == BF_RGM;
     if(desc.isAccSrc || desc.isAccDst) {
         pi.reg = 0b000;
@@ -184,6 +196,18 @@ ParsedInst parseInstruction(u8* ptr, InstDesc desc) {
         } else {
             makeAddrOpd(&pi.src, pi.addrLo, pi.addrHi);
             makeRegOpd(&pi.dst, pi.reg, pi.w);
+        }
+        return pi;
+    }
+
+    // MOV_SRG_RGM (d=0), MOV_RGM_SRG (d=1)
+    if(hasSrg && hasRgm) {
+        if(pi.d == 0) {
+            makeSrgOpd(&pi.src, pi.srg);
+            makeRgmOpd(&pi.dst, pi.rgm, 1, pi.mod, false, pi.dispLo, pi.dispHi);
+        } else {
+            makeRgmOpd(&pi.src, pi.rgm, 1, pi.mod, false, pi.dispLo, pi.dispHi);
+            makeSrgOpd(&pi.dst, pi.srg);
         }
         return pi;
     }
@@ -251,50 +275,75 @@ int findInstOpCodeMatch(u8* ptr) {
     exit(1);
 }
 
+u16 srgRead(Computer* comp, SegmentRegisterEnum srgIdx) {
+    switch(srgIdx) {
+        case SRG_ES: return comp->es.word;
+        case SRG_CS: return comp->cs.word;
+        case SRG_SS: return comp->ss.word;
+        case SRG_DS: return comp->ds.word;
+        case SRG_COUNT:
+            fprintf(stderr, "ERROR: Invalid read segment register index %d (SRG_COUNT=%d)\n", srgIdx, SRG_COUNT);
+            exit(1);
+    }
+}
+u16 srgWrite(Computer* comp, SegmentRegisterEnum srgIdx, u16 value) {
+    u16 oldValue = 0;
+    switch(srgIdx) {
+        case SRG_ES: oldValue = srgRead(comp, srgIdx); comp->es.word = value; break;
+        case SRG_CS: oldValue = srgRead(comp, srgIdx); comp->cs.word = value; break;
+        case SRG_SS: oldValue = srgRead(comp, srgIdx); comp->ss.word = value; break;
+        case SRG_DS: oldValue = srgRead(comp, srgIdx); comp->ds.word = value; break;
+        case SRG_COUNT:
+            fprintf(stderr, "ERROR: Invalid write segment register index %d (SRG_COUNT=%d)\n", srgIdx, SRG_COUNT);
+            exit(1);
+    }
+    return oldValue;
+}
+
 u16 regRead(Computer* comp, RegisterEnum regIdx) {
     switch(regIdx) {
-        case REG_AL: return (comp->ax & 0x00ff);
-        case REG_BL: return (comp->bx & 0x00ff);
-        case REG_CL: return (comp->cx & 0x00ff);
-        case REG_DL: return (comp->dx & 0x00ff);
-        case REG_AH: return (comp->ax & 0xff00) >> 8;
-        case REG_BH: return (comp->bx & 0xff00) >> 8;
-        case REG_CH: return (comp->cx & 0xff00) >> 8;
-        case REG_DH: return (comp->dx & 0xff00) >> 8;
-        case REG_AX: return comp->ax;
-        case REG_BX: return comp->bx;
-        case REG_CX: return comp->cx;
-        case REG_DX: return comp->dx;
-        case REG_SP: return comp->sp;
-        case REG_BP: return comp->bp;
-        case REG_SI: return comp->si;
-        case REG_DI: return comp->di;
+        case REG_AL: return comp->ax.lo;
+        case REG_BL: return comp->bx.lo;
+        case REG_CL: return comp->cx.lo;
+        case REG_DL: return comp->dx.lo;
+        case REG_AH: return comp->ax.hi;
+        case REG_BH: return comp->bx.hi;
+        case REG_CH: return comp->cx.hi;
+        case REG_DH: return comp->dx.hi;
+        case REG_AX: return comp->ax.word;
+        case REG_BX: return comp->bx.word;
+        case REG_CX: return comp->cx.word;
+        case REG_DX: return comp->dx.word;
+        case REG_SP: return comp->sp.word;
+        case REG_BP: return comp->bp.word;
+        case REG_SI: return comp->si.word;
+        case REG_DI: return comp->di.word;
         case REG_COUNT:
-            fprintf(stderr, "ERROR: Invalid register index %d (REG_COUNT=%d)\n", regIdx, REG_COUNT);
+            fprintf(stderr, "ERROR: Invalid read register index %d (REG_COUNT=%d)\n", regIdx, REG_COUNT);
             exit(1);
     }
 }
 u16 regWrite(Computer* comp, RegisterEnum regIdx, u16 value) {
-    s16 oldValue = 0;
+    u16 oldValue = 0;
     switch(regIdx) {
-        case REG_AL: oldValue = (comp->ax & 0x00ff); comp->ax = (comp->ax & 0xff00) | (value & 0x00ff); break;
-        case REG_BL: oldValue = (comp->bx & 0x00ff); comp->bx = (comp->bx & 0xff00) | (value & 0x00ff); break;
-        case REG_CL: oldValue = (comp->cx & 0x00ff); comp->cx = (comp->cx & 0xff00) | (value & 0x00ff); break;
-        case REG_DL: oldValue = (comp->dx & 0x00ff); comp->dx = (comp->dx & 0xff00) | (value & 0x00ff); break;
-        case REG_AH: oldValue = (comp->ax & 0xff00) >> 8; comp->ax = (comp->ax & 0x00ff) | (value & 0xff00); break;
-        case REG_BH: oldValue = (comp->bx & 0xff00) >> 8; comp->bx = (comp->bx & 0x00ff) | (value & 0xff00); break;
-        case REG_CH: oldValue = (comp->cx & 0xff00) >> 8; comp->cx = (comp->cx & 0x00ff) | (value & 0xff00); break;
-        case REG_DH: oldValue = (comp->dx & 0xff00) >> 8; comp->dx = (comp->dx & 0x00ff) | (value & 0xff00); break;
-        case REG_AX: oldValue = comp->ax; comp->ax = value; break;
-        case REG_BX: oldValue = comp->bx; comp->bx = value; break;
-        case REG_CX: oldValue = comp->cx; comp->cx = value; break;
-        case REG_DX: oldValue = comp->dx; comp->dx = value; break;
-        case REG_SP: oldValue = comp->sp; comp->sp = value; break;
-        case REG_BP: oldValue = comp->bp; comp->bp = value; break;
-        case REG_SI: oldValue = comp->si; comp->si = value; break;
-        case REG_DI: oldValue = comp->di; comp->di = value; break;
+        case REG_AL: oldValue = regRead(comp, regIdx); comp->ax.lo = value; break;
+        case REG_BL: oldValue = regRead(comp, regIdx); comp->bx.lo = value; break;
+        case REG_CL: oldValue = regRead(comp, regIdx); comp->cx.lo = value; break;
+        case REG_DL: oldValue = regRead(comp, regIdx); comp->dx.lo = value; break;
+        case REG_AH: oldValue = regRead(comp, regIdx); comp->ax.hi = value; break;
+        case REG_BH: oldValue = regRead(comp, regIdx); comp->bx.hi = value; break;
+        case REG_CH: oldValue = regRead(comp, regIdx); comp->cx.hi = value; break;
+        case REG_DH: oldValue = regRead(comp, regIdx); comp->dx.hi = value; break;
+        case REG_AX: oldValue = regRead(comp, regIdx); comp->ax.word = value; break;
+        case REG_BX: oldValue = regRead(comp, regIdx); comp->bx.word = value; break;
+        case REG_CX: oldValue = regRead(comp, regIdx); comp->cx.word = value; break;
+        case REG_DX: oldValue = regRead(comp, regIdx); comp->dx.word = value; break;
+        case REG_SP: oldValue = regRead(comp, regIdx); comp->sp.word = value; break;
+        case REG_BP: oldValue = regRead(comp, regIdx); comp->bp.word = value; break;
+        case REG_SI: oldValue = regRead(comp, regIdx); comp->si.word = value; break;
+        case REG_DI: oldValue = regRead(comp, regIdx); comp->di.word = value; break;
         case REG_COUNT:
-            fprintf(stderr, "ERROR: Invalid register index %d (REG_COUNT=%d)\n", regIdx, REG_COUNT);
+            fprintf(stderr, "ERROR: Invalid write register index %d (REG_COUNT=%d)\n", regIdx, REG_COUNT);
             exit(1);
     }
     return oldValue;
@@ -303,22 +352,37 @@ u16 regWrite(Computer* comp, RegisterEnum regIdx, u16 value) {
 
 
 char* executeInst(Computer* comp, ParsedInst pi) {
-    char* str = next_scratch;
+    if(pi.src.type == OPD_NOOP) {
+        return "OPD_NOOP src not supported (yet)";
+    }
 
+    u16 srcValue = 0;
+    switch(pi.src.type) {
+        case OPD_REG:  srcValue = regRead(comp, pi.src.regOpd.regIdx); break;
+        case OPD_SRG:  srcValue = srgRead(comp, pi.src.srgOpd.srgIdx); break;
+        case OPD_DISP: srcValue = pi.src.dispOpd.disp; break;
+        case OPD_DATA: srcValue = pi.src.dataOpd.data; break;
+        case OPD_ADDR: srcValue = pi.src.addrOpd.addr; break;
+        case OPD_INC8: srcValue = pi.src.inc8Opd.inc8; break;
+        case OPD_NOOP:
+        case OPD_COUNT:
+            break;
+    }
+
+    u16 oldValue = 0;
+    u16 newValue = 0;
+    const char* name = "";
     switch(pi.action) {
         case MOV:
-            if(pi.dst.type == OPD_REG && pi.src.type == OPD_DATA) {
-                RegisterEnum regIdx = pi.dst.regOpd.regIdx;
-                u16 newValue = pi.src.dataOpd.data;
-                u16 oldValue = regWrite(comp, regIdx, newValue);
-                sprintfcat(str, "%s: 0x%02x -> 0x%02x", registerNameStrs[regIdx], oldValue, newValue);
+            if(pi.dst.type == OPD_REG) {
+                oldValue = regRead(comp, REGISTER_PARENT_MAP[pi.dst.regOpd.regIdx]);
+                regWrite(comp, pi.dst.regOpd.regIdx, srcValue);
+                newValue = regRead(comp, REGISTER_PARENT_MAP[pi.dst.regOpd.regIdx]);
+                name = registerNameStrs[REGISTER_PARENT_MAP[pi.dst.regOpd.regIdx]];
             }
-            if(pi.dst.type == OPD_REG && pi.src.type == OPD_REG) {
-                RegisterEnum dstReg = pi.dst.regOpd.regIdx;
-                RegisterEnum srcReg = pi.src.regOpd.regIdx;
-                u16 srcValue = regRead(comp, srcReg);
-                u16 oldValue = regWrite(comp, dstReg, srcValue);
-                sprintfcat(str, "%s: 0x%02x -> 0x%02x", registerNameStrs[dstReg], oldValue, srcValue);
+            if(pi.dst.type == OPD_SRG) {
+                srgWrite(comp, pi.dst.srgOpd.srgIdx, srcValue);
+                name = segmentRegisterStrs[pi.dst.srgOpd.srgIdx];
             }
             break;
         case ADD:
@@ -331,6 +395,8 @@ char* executeInst(Computer* comp, ParsedInst pi) {
             break;
     }
 
+    char* str = (char*) next_scratch;
+    sprintfcat(str, "%-4s: 0x%04x -> 0x%04x", name, oldValue, newValue);
     next_scratch += strlen(str);
     return str;
 }
@@ -406,16 +472,23 @@ int main(int argc, const char** argv) {
         ParsedInst parsed = program[i];
         char* asmLine = parsedInstToStr(parsed);
         char* effect = executeInst(&comp, parsed);
-        fprintf(out, "%s    ; %s\n", asmLine, effect);
+        fprintf(out, "%-16s ; %s\n", asmLine, effect);
     }
 
     // Final state
-    RegisterEnum registers[] = { REG_AX, REG_BX, REG_CX, REG_DX, REG_SP, REG_BP, REG_SI, REG_DI };
     fprintf(out, "\nFinal registers:\n");
+    RegisterEnum registers[] = { REG_AX, REG_BX, REG_CX, REG_DX, REG_SP, REG_BP, REG_SI, REG_DI };
     for(int i = 0; i < sizeof(registers) / sizeof (registers[0]); i++) {
         RegisterEnum ri = registers[i];
         u16 value = regRead(&comp, ri);
         fprintf(out, "    %s: 0x%04x (%d)\n", registerNameStrs[ri], value, value);
+    }
+    fprintf(out, "    ----\n");
+    SegmentRegisterEnum  serRegisters[] = { SRG_ES, SRG_CS, SRG_SS, SRG_DS };
+    for(int i = 0; i < sizeof(serRegisters) / sizeof (serRegisters[0]); i++) {
+        SegmentRegisterEnum ri = serRegisters[i];
+        u16 value = srgRead(&comp, ri);
+        fprintf(out, "    %s: 0x%04x (%d)\n", segmentRegisterStrs[ri], value, value);
     }
     return 0;
 }
