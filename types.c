@@ -210,7 +210,7 @@ static_assert(sizeof(instructionDescriptors)/sizeof(instructionDescriptors[0]) =
 #undef NOOP
 #undef INST
 
-#define REGISTERS_MAP(X) \
+#define REGISTERS_MAP(X)    \
     X(REG_AL, 0b0000, "al") \
     X(REG_CL, 0b0001, "cl") \
     X(REG_DL, 0b0010, "dl") \
@@ -260,7 +260,7 @@ const RegisterEnum REGISTER_PARENT_MAP[REG_COUNT] = {
     [REG_DI] = REG_DI,
 };
 
-#define EFFECTIVE_ADDR_MAP(X) \
+#define EFFECTIVE_ADDR_MAP(X)     \
     X(EA_BX_SI, 0b000, "bx + si") \
     X(EA_BX_DI, 0b001, "bx + di") \
     X(EA_BP_SI, 0b010, "bp + si") \
@@ -281,7 +281,8 @@ const char* effectiveAddrStrs[EA_COUNT] = {
 #undef X
 };
 
-#define SEGMENT_REGISTER_MAP(X)                 \
+
+#define SEGMENT_REGISTER_MAP(X)                  \
     X(SRG_ES, 0b00, "es")  /* Extra segment */   \
     X(SRG_CS, 0b01, "cs")  /* Caller segment */  \
     X(SRG_SS, 0b10, "ss")  /* Stack segment */   \
@@ -299,17 +300,55 @@ const char* segmentRegisterStrs[SRG_COUNT] = {
 };
 #undef SEGMENT_REGISTER_MAP
 
+#define FLAGS_REGISTER_MAP(X)               \
+    X(CF, 'C',  1)  /* Carry */             \
+    X(PF, 'P',  3)  /* Parity */            \
+    X(AF, 'A',  5)  /* Auxiliary carry */   \
+    X(ZF, 'Z',  7)  /* Zero */              \
+    X(SF, 'S',  8)  /* Sign */              \
+    X(TF, 'T',  9)  /* Trap */              \
+    X(IF, 'I', 10)  /* Interrupt enable */  \
+    X(DF, 'D', 11)  /* Direction */         \
+    X(OF, 'O', 12)  /* Overflow */
+typedef enum {
+#define X(K,N,S) K,
+    FLAGS_REGISTER_MAP(X)
+#undef X
+    FLAG_REG_COUNT
+} FlagsRegisterEnum;
+const u8 flagsBitPosition[FLAG_REG_COUNT] = {
+#define X(K,N,S) [K] = S,
+    FLAGS_REGISTER_MAP(X)
+#undef X
+};
+const char flagsRegisterStrs[FLAG_REG_COUNT] = {
+#define X(K,N,S) [K] = N,
+    FLAGS_REGISTER_MAP(X)
+#undef X
+};
+#undef FLAGS_REGISTER_MAP
 
-typedef enum OperandType {
-    OPD_NOOP,
-    OPD_REG,
-    OPD_SRG,
-    OPD_DISP,
-    OPD_DATA,
-    OPD_ADDR,
-    OPD_INC8,
+#define OPERAND_TYPE_MAP(X) \
+    X(OPD_NOOP, "OPD_NOOP") \
+    X(OPD_REG,  "OPD_REG")  \
+    X(OPD_SRG,  "OPD_SRG")  \
+    X(OPD_DISP, "OPD_DISP") \
+    X(OPD_DATA, "OPD_DATA") \
+    X(OPD_ADDR, "OPD_ADDR") \
+    X(OPD_INC8, "OPD_INC8")
+typedef enum {
+#define X(K,N) K,
+    OPERAND_TYPE_MAP(X)
+#undef X
     OPD_COUNT
 } OperandType;
+const char* OPERAND_TYPE_STRS[OPD_COUNT] = {
+#define X(K,N) [K] = N,
+    OPERAND_TYPE_MAP(X)
+#undef X
+};
+#undef OPERAND_TYPE_MAP
+
 
 typedef struct Operand {
     OperandType type;
@@ -356,10 +395,14 @@ typedef union SimReg {
     };
 } SimReg;
 
+
 typedef SimReg SegReg;
 
 typedef struct {
     SimReg ax, bx, cx, dx;
     SimReg sp, bp, si, di;
     SegReg es, cs, ss, ds;
+    u16 flags;
+    SimReg ip;
 } Computer;
+
