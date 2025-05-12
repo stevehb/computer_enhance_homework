@@ -64,16 +64,16 @@ typedef enum ActionType {
     X(CMP_RGM_REG, CMP, "CMP_RGM_REG") \
     X(CMP_IMM_RGM, CMP, "CMP_IMM_RGM") \
     X(CMP_IMM_ACC, CMP, "CMP_IMM_ACC") \
-    X(JMP_JE,      JMP, "JMP_JE") \
-    X(JMP_JNE,     JMP, "JMP_JNE") \
+    X(JMP_JZ,      JMP, "JMP_JZ") \
+    X(JMP_JNZ,     JMP, "JMP_JNZ") \
     X(JMP_JL,      JMP, "JMP_JL") \
     X(JMP_JNL,     JMP, "JMP_JNL") \
-    X(JMP_JLE,     JMP, "JMP_JLE") \
     X(JMP_JG,      JMP, "JMP_JG") \
+    X(JMP_JNG,     JMP, "JMP_JNG") \
     X(JMP_JB,      JMP, "JMP_JB") \
     X(JMP_JNB,     JMP, "JMP_JNB") \
-    X(JMP_JBE,     JMP, "JMP_JBE") \
     X(JMP_JA,      JMP, "JMP_JA") \
+    X(JMP_JNA,     JMP, "JMP_JNA") \
     X(JMP_JP,      JMP, "JMP_JP") \
     X(JMP_JNP,     JMP, "JMP_JNP") \
     X(JMP_JO,      JMP, "JMP_JO") \
@@ -168,16 +168,16 @@ InstDesc instructionDescriptors[ID_COUNT] = {
     INST(CMP_RGM_REG, "cmp",    /* DISP      */OP(0b00001110, 0, 2, 0b00111111), NOOP,   F, F, F, D(0, 1, 0b1), W(0, 0, 0b1), MOD(1, 6, 0b11), REG(1, 3, 0b111), RGM(1, 0, 0b111), DISP)
     INST(CMP_IMM_RGM, "cmp",    /* DISP DATA */OP(0b00100000, 0, 2, 0b00111111), OP_111, F, F, T, S(0, 1, 0b1), W(0, 0, 0b1), MOD(1, 6, 0b11),                   RGM(1, 0, 0b111), DISP, DATA)
     INST(CMP_IMM_ACC, "cmp",    /*      DATA */OP(0b00011110, 0, 1, 0b01111111), NOOP,   F, T, F,               W(0, 0, 0b1),                                                            DATA)
-    INST(JMP_JE,      "je",     /* INC8      */OP(0b01110100, 0, 0, 0b11111111), NOOP,   F, F, F, INC8)
-    INST(JMP_JNE,     "jne",    /* INC8      */OP(0b01110101, 0, 0, 0b11111111), NOOP,   F, F, F, INC8)
+    INST(JMP_JZ,      "jz",     /* INC8      */OP(0b01110100, 0, 0, 0b11111111), NOOP,   F, F, F, INC8)
+    INST(JMP_JNZ,     "jnz",    /* INC8      */OP(0b01110101, 0, 0, 0b11111111), NOOP,   F, F, F, INC8)
     INST(JMP_JL,      "jl",     /* INC8      */OP(0b01111100, 0, 0, 0b11111111), NOOP,   F, F, F, INC8)
     INST(JMP_JNL,     "jnl",    /* INC8      */OP(0b01111101, 0, 0, 0b11111111), NOOP,   F, F, F, INC8)
-    INST(JMP_JLE,     "jle",    /* INC8      */OP(0b01111110, 0, 0, 0b11111111), NOOP,   F, F, F, INC8)
     INST(JMP_JG,      "jg",     /* INC8      */OP(0b01111111, 0, 0, 0b11111111), NOOP,   F, F, F, INC8)
+    INST(JMP_JNG,     "jng",    /* INC8      */OP(0b01111110, 0, 0, 0b11111111), NOOP,   F, F, F, INC8)
     INST(JMP_JB,      "jb",     /* INC8      */OP(0b01110010, 0, 0, 0b11111111), NOOP,   F, F, F, INC8)
     INST(JMP_JNB,     "jnb",    /* INC8      */OP(0b01110011, 0, 0, 0b11111111), NOOP,   F, F, F, INC8)
-    INST(JMP_JBE,     "jbe",    /* INC8      */OP(0b01110110, 0, 0, 0b11111111), NOOP,   F, F, F, INC8)
     INST(JMP_JA,      "ja",     /* INC8      */OP(0b01110111, 0, 0, 0b11111111), NOOP,   F, F, F, INC8)
+    INST(JMP_JNA,     "jna",    /* INC8      */OP(0b01110110, 0, 0, 0b11111111), NOOP,   F, F, F, INC8)
     INST(JMP_JP,      "jp",     /* INC8      */OP(0b01111010, 0, 0, 0b11111111), NOOP,   F, F, F, INC8)
     INST(JMP_JNP,     "jnp",    /* INC8      */OP(0b01111011, 0, 0, 0b11111111), NOOP,   F, F, F, INC8)
     INST(JMP_JO,      "jo",     /* INC8      */OP(0b01110000, 0, 0, 0b11111111), NOOP,   F, F, F, INC8)
@@ -366,7 +366,7 @@ typedef struct Operand {
 typedef struct ParsedInst {
     InstType type;
     InstAction action;
-    u32 bytesRead;
+    u16 bytesRead;
     u8 w: 1;
     u8 s: 1;
     u8 d: 1;
@@ -395,7 +395,6 @@ typedef union SimReg {
     };
 } SimReg;
 
-
 typedef SimReg SegReg;
 
 typedef struct {
@@ -403,6 +402,9 @@ typedef struct {
     SimReg sp, bp, si, di;
     SegReg es, cs, ss, ds;
     u16 flags;
-    SimReg ip;
+    struct {
+        u16 instIdx;
+        u16 byteOffset;
+    } ip;
 } Computer;
 

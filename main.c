@@ -12,16 +12,14 @@
 #include "types.c"
 #include "utils.c"
 
-//#define DEFAULT_FILENAME    "hw/listing_0037_single_register_mov"
-//#define DEFAULT_FILENAME    "hw/listing_0038_many_register_mov"
-//#define DEFAULT_FILENAME    "hw/listing_0039_more_movs"
-//#define DEFAULT_FILENAME    "hw/listing_0040_challenge_movs"
-//#define DEFAULT_FILENAME    "hw/listing_0041_add_sub_cmp_jnz"
 //#define DEFAULT_FILENAME    "hw/listing_0043_immediate_movs"
 //#define DEFAULT_FILENAME    "hw/listing_0044_register_movs"
 //#define DEFAULT_FILENAME    "hw/listing_0045_challenge_register_movs"
-#define DEFAULT_FILENAME    "hw/listing_0046_add_sub_cmp"
+//#define DEFAULT_FILENAME    "hw/listing_0046_add_sub_cmp"
 //#define DEFAULT_FILENAME    "hw/listing_0047_challenge_flags"
+// #define DEFAULT_FILENAME    "hw/listing_0048_ip_register"
+// #define DEFAULT_FILENAME    "hw/listing_0049_conditional_jumps"
+#define DEFAULT_FILENAME    "hw/listing_0050_challenge_jumps"
 
 u8 getBitValue(u8* ptr, BitField bits) {
     if(bits.type == BF_NONE || bits.type == BF_COUNT) {
@@ -376,10 +374,54 @@ char* flagsToStr(Computer* comp) {
     return str;
 }
 
-char* executeInst(Computer* comp, ParsedInst pi) {
-    if(pi.src.type == OPD_NOOP) {
-        return "OPD_NOOP src not supported (yet)";
+char* statusToStr(Computer* comp, bool ip, bool genReg, bool extReg, bool segReg, bool flags) {
+    char *str = (char *) next_scratch;
+    next_scratch += 256;
+    if(ip) {
+        sprintfcat(str, "ip[0x%02x:%02d] ", comp->ip.byteOffset, comp->ip.instIdx);
     }
+    if(genReg || extReg) {
+        sprintfcat(str, "[");
+        if(genReg) {
+            u16 ax = regRead(comp, REG_AX),
+                bx = regRead(comp, REG_BX),
+                cx = regRead(comp, REG_CX),
+                dx = regRead(comp, REG_DX);
+            sprintfcat(str, "%04x %04x %04x %04x", ax, bx, cx, dx);
+        }
+        if(genReg && extReg) {
+            sprintfcat(str, " ");
+        }
+        if(extReg) {
+            u16 sp = regRead(comp, REG_SP),
+                bp = regRead(comp, REG_BP),
+                si = regRead(comp, REG_SI),
+                di = regRead(comp, REG_DI);
+            sprintfcat(str, "%04x %04x %04x %04x", sp, bp, si, di);
+        }
+        sprintfcat(str, "] ");
+    }
+    if(segReg) {
+        u16 es = srgRead(comp, SRG_ES),
+            cs = srgRead(comp, SRG_CS),
+            ss = srgRead(comp, SRG_SS),
+            ds = srgRead(comp, SRG_DS);
+        sprintfcat(str, "[%04x %04x %04x %04x] ", es, cs, ss, ds);
+    }
+    if(flags) {
+        const char* flagsStr = flagsToStr(comp);
+        sprintfcat(str, "%s", flagsStr);
+    }
+    return str;
+}
+
+int jumpCount = 0;
+// ReSharper disable CppDFAUnreachableCode
+char* executeInst(Computer *comp, ParsedInst* program, const int instCount) {
+    assert(comp->ip.instIdx < instCount);
+    ParsedInst pi = program[comp->ip.instIdx++];
+    comp->ip.byteOffset += pi.bytesRead;
+    char* execNotes = NULL;
 
     u16 srcValue = 0;
     switch(pi.src.type) {
@@ -396,69 +438,126 @@ char* executeInst(Computer* comp, ParsedInst pi) {
 
     u16 oldValue = 0;
     u16 newValue = 0;
-    const char* name = "";
+    const char* regName = "";
     const char* flagsStr = "";
     switch(pi.action) {
-        case MOV:
+        case MOV: {
             if(pi.dst.type == OPD_REG) {
                 // Break out reads to get parent values
                 oldValue = regRead(comp, REGISTER_PARENT_MAP[pi.dst.regOpd.regIdx]);
                 regWrite(comp, pi.dst.regOpd.regIdx, srcValue);
                 newValue = regRead(comp, REGISTER_PARENT_MAP[pi.dst.regOpd.regIdx]);
-                name = registerNameStrs[REGISTER_PARENT_MAP[pi.dst.regOpd.regIdx]];
+                regName = registerNameStrs[REGISTER_PARENT_MAP[pi.dst.regOpd.regIdx]];
             }
             if(pi.dst.type == OPD_SRG) {
                 oldValue = srgWrite(comp, pi.dst.srgOpd.srgIdx, srcValue);
-                name = segmentRegisterStrs[pi.dst.srgOpd.srgIdx];
+                regName = segmentRegisterStrs[pi.dst.srgOpd.srgIdx];
             }
-            break;
-        case ADD:
+        } break;
+        case ADD: {
             assert(pi.dst.type == OPD_REG);
             if(pi.dst.type == OPD_REG) {
                 oldValue = regRead(comp, REGISTER_PARENT_MAP[pi.dst.regOpd.regIdx]);
                 regWrite(comp, pi.dst.regOpd.regIdx, oldValue + srcValue);
                 newValue = regRead(comp, REGISTER_PARENT_MAP[pi.dst.regOpd.regIdx]);
-                name = registerNameStrs[REGISTER_PARENT_MAP[pi.dst.regOpd.regIdx]];
+                regName = registerNameStrs[REGISTER_PARENT_MAP[pi.dst.regOpd.regIdx]];
                 flagsSet(comp, calcFlags(true, oldValue, srcValue, newValue));
                 flagsStr = flagsToStr(comp);
             }
-            break;
-        case SUB:
+        } break;
+        case SUB: {
             assert(pi.dst.type == OPD_REG);
             if(pi.dst.type == OPD_REG) {
                 oldValue = regRead(comp, REGISTER_PARENT_MAP[pi.dst.regOpd.regIdx]);
                 regWrite(comp, pi.dst.regOpd.regIdx, oldValue - srcValue);
                 newValue = regRead(comp, REGISTER_PARENT_MAP[pi.dst.regOpd.regIdx]);
-                name = registerNameStrs[REGISTER_PARENT_MAP[pi.dst.regOpd.regIdx]];
+                regName = registerNameStrs[REGISTER_PARENT_MAP[pi.dst.regOpd.regIdx]];
                 flagsSet(comp, calcFlags(false, oldValue, srcValue, newValue));
                 flagsStr = flagsToStr(comp);
             }
-            break;
-        case CMP:
+        } break;
+        case CMP: {
             assert(pi.dst.type == OPD_REG);
             if(pi.dst.type == OPD_REG) {
                 oldValue = regRead(comp, REGISTER_PARENT_MAP[pi.dst.regOpd.regIdx]);
                 newValue = oldValue - srcValue;
-                name = "";
                 flagsSet(comp, calcFlags(false, oldValue, srcValue, newValue));
                 flagsStr = flagsToStr(comp);
             }
-            break;
-        case JMP:
-            break;
-    }
+        } break;
+        case JMP: {
+            assert(pi.dst.type == OPD_INC8);
 
-    char* regStr = (char*) next_scratch;
-    if(strlen(name) == 0) {
-        strcat(regStr, " ");
-    } else {
-        sprintfcat(regStr, "%-4s: 0x%04x -> 0x%04x", name, oldValue, newValue);
+            jumpCount++;
+
+            // For logic, look up Table 2-15
+            if (pi.type == JMP_LOOP || pi.type == JMP_LOOPZ || pi.type == JMP_LOOPNZ) {
+                oldValue = regRead(comp, REG_CX);
+                newValue = oldValue - 1;
+                regWrite(comp, REG_CX, newValue);
+                regName = registerNameStrs[REG_CX];
+                // execNotes = asprintfcat(execNotes, "    [%02d] jump %s: %s 0x%02x -> 0x%02x\n", jumpCount, instructionDescriptors[pi.type].instStr, regName, oldValue, newValue);
+            }
+
+            u8 cf = flagsRead(comp, CF);
+            u8 zf = flagsRead(comp, ZF);
+            u8 sf = flagsRead(comp, SF);
+            u8 of = flagsRead(comp, OF);
+            u8 pf = flagsRead(comp, PF);
+            u16 cx = regRead(comp, REG_CX);
+            bool makeJump =
+                    (pi.type == JMP_JZ   && (zf == 1)) ||
+                    (pi.type == JMP_JNZ  && (zf == 0)) ||
+                    (pi.type == JMP_JL   && (sf ^ of) == 1) ||
+                    (pi.type == JMP_JNL  && (sf ^ of) == 0) ||
+                    (pi.type == JMP_JG   && (zf | (sf ^ of)) == 0) ||
+                    (pi.type == JMP_JNG  && (zf | (sf ^ of)) == 1) ||
+                    (pi.type == JMP_JB   && cf == 1) ||
+                    (pi.type == JMP_JNB  && cf == 0) ||
+                    (pi.type == JMP_JA   && (cf | zf) == 0) ||
+                    (pi.type == JMP_JNA  && (cf | zf) == 1) ||
+                    (pi.type == JMP_JP   && pf == 1) ||
+                    (pi.type == JMP_JNP  && pf == 0) ||
+                    (pi.type == JMP_JO   && of == 1) ||
+                    (pi.type == JMP_JNO  && of == 0) ||
+                    (pi.type == JMP_JS   && sf == 1) ||
+                    (pi.type == JMP_JNS  && sf == 0) ||
+                    (pi.type == JMP_JCXZ && cx == 0) ||
+                    (pi.type == JMP_LOOP && cx == 0) ||
+                    (pi.type == JMP_LOOPZ  && (cx != 0 && zf == 1)) ||
+                    (pi.type == JMP_LOOPNZ && (cx != 0 && zf == 0));
+            if(!makeJump) {
+                execNotes = asprintfcat(execNotes, "    [%02d] NOT TAKING the jump: %s %d\n", jumpCount, instructionDescriptors[pi.type].instStr, pi.dst.inc8Opd.inc8);
+                break;
+            }
+
+            execNotes = asprintfcat(execNotes, "    [%02d] TAKING the jump: %s %d\n", jumpCount, instructionDescriptors[pi.type].instStr, pi.dst.inc8Opd.inc8);
+
+            s8 incVal = pi.dst.inc8Opd.inc8;
+            s8 incDir = incVal < 0 ? -1 : 1;
+            incVal = incVal < 0 ? -incVal : incVal;
+            s16 bytesJumped = 0;
+            do {
+                // Check up top to handle `jmp 0`
+                if(bytesJumped == incVal) { break; }
+                if(bytesJumped > incVal) {
+                    fprintf(stderr, "ERROR: Jumped too far. Instruction '%s', jumped %+d bytes\n", parsedInstToStr(pi), bytesJumped);
+                    exit(1);
+                }
+                u16 instSize = 0;
+                if (incDir > 0) {
+                    instSize = program[comp->ip.instIdx].bytesRead;
+                    comp->ip.instIdx += incDir;
+                } else {
+                    comp->ip.instIdx += incDir;
+                    instSize = program[comp->ip.instIdx].bytesRead;
+                }
+                comp->ip.byteOffset += incDir * instSize;
+                bytesJumped += instSize;
+            } while (comp->ip.instIdx >= 0 && comp->ip.instIdx < instCount);
+        } break;
     }
-    next_scratch += strlen(regStr) + 1;
-    char* str = (char*) next_scratch;
-    sprintfcat(str, "%-30s %s", regStr, flagsStr);
-    next_scratch += strlen(str) + 1;
-    return str;
+    return execNotes;
 }
 
 int main(int argc, const char** argv) {
@@ -520,37 +619,44 @@ int main(int argc, const char** argv) {
             fprintf(stderr, "Failed to parse instruction: %s: %s", instTypeStrs[desc.type], bytesToHexStr(data, 6));
             exit(1);
         }
+        // fprintf(out, "[0x%03x:%02d] [size %d] %s\n", fileOffset, instCount, parsed.bytesRead, parsedInstToStr(parsed));
         fileOffset += parsed.bytesRead;
         program[instCount++] = parsed;
     }
 
     // Run program
     Computer comp = { 0 };
-    for(int i = 0; i < instCount; i++) {
+    for(comp.ip.instIdx = 0; comp.ip.instIdx < instCount; /* INCREMENT IN LOOP/EXECUTE */) {
         memset(scratch, 0, BUFF_SIZE);
         next_scratch = scratch;
-        ParsedInst parsed = program[i];
-        char* asmLine = parsedInstToStr(parsed);
-        char* effect = executeInst(&comp, parsed);
-        fprintf(out, "%-16s ; %s\n", asmLine, effect);
+        char* asmLine = parsedInstToStr(program[comp.ip.instIdx]);
+        char* notes = executeInst(&comp, program, instCount);
+        char* status = statusToStr(&comp, true, true, false, false, true);
+        fprintf(out, "%-16s ; %s\n", asmLine, status);
+        if (notes != NULL) {
+            fprintf(out, "%s\n", notes);
+        }
     }
 
-    // Final state
-    fprintf(out, "\nFinal registers:\n");
-    RegisterEnum registers[] = { REG_AX, REG_BX, REG_CX, REG_DX, REG_SP, REG_BP, REG_SI, REG_DI };
-    for(int i = 0; i < sizeof(registers) / sizeof (registers[0]); i++) {
-        RegisterEnum ri = registers[i];
-        u16 value = regRead(&comp, ri);
-        fprintf(out, "    %s: 0x%04x (%d)\n", registerNameStrs[ri], value, value);
+    // Print final state
+    {
+        fprintf(out, "\nFinal registers:\n");
+        RegisterEnum registers[] = { REG_AX, REG_BX, REG_CX, REG_DX, REG_SP, REG_BP, REG_SI, REG_DI };
+        for(int i = 0; i < sizeof(registers) / sizeof (registers[0]); i++) {
+            RegisterEnum ri = registers[i];
+            u16 value = regRead(&comp, ri);
+            fprintf(out, "    %s: 0x%04x (%d)\n", registerNameStrs[ri], value, value);
+        }
+        fprintf(out, "    ----\n");
+        SegmentRegisterEnum  serRegisters[] = { SRG_ES, SRG_CS, SRG_SS, SRG_DS };
+        for(int i = 0; i < sizeof(serRegisters) / sizeof (serRegisters[0]); i++) {
+            SegmentRegisterEnum ri = serRegisters[i];
+            u16 value = srgRead(&comp, ri);
+            fprintf(out, "    %s: 0x%04x (%d)\n", segmentRegisterStrs[ri], value, value);
+        }
+        fprintf(out, "    ----\n");
+        fprintf(out, "    ip: 0x%x (idx=%d)\n", comp.ip.byteOffset, comp.ip.instIdx);
+        fprintf(out, " flags: %s\n", flagsToStr(&comp));
     }
-    fprintf(out, "    ----\n");
-    SegmentRegisterEnum  serRegisters[] = { SRG_ES, SRG_CS, SRG_SS, SRG_DS };
-    for(int i = 0; i < sizeof(serRegisters) / sizeof (serRegisters[0]); i++) {
-        SegmentRegisterEnum ri = serRegisters[i];
-        u16 value = srgRead(&comp, ri);
-        fprintf(out, "    %s: 0x%04x (%d)\n", segmentRegisterStrs[ri], value, value);
-    }
-    fprintf(out, "    ----\n");
-    fprintf(out, " flags: %s\n", flagsToStr(&comp));
     return 0;
 }

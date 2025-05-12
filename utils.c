@@ -1,6 +1,7 @@
 //
 // Created by stevehb on 02-Apr-25.
 //
+#include <ctype.h>
 #include <stdarg.h>
 #include <stdbool.h>
 
@@ -54,6 +55,22 @@ char* bytesToHexStr(u8* bytes, int size) {
     return start;
 }
 
+char* asprintfcat(const char* oldStr, const char *format, ...) {
+    char* newStr = (char*) next_scratch;
+    va_list args1;
+    va_start(args1, format);
+    next_scratch += vsprintf(newStr, format, args1) + 1;
+    va_end(args1);
+
+    if (oldStr == NULL) {
+        return newStr;
+    }
+    char* finalStr = (char*) next_scratch;
+    strcpy(finalStr, oldStr);
+    strcat(finalStr, newStr);
+    next_scratch += strlen(finalStr) + 1;
+    return finalStr;
+};
 int sprintfcat(char *dst, const char *format, ...) {
     size_t len = strlen(dst);
     va_list args;
@@ -117,4 +134,26 @@ u16 calcFlags(bool isAdd, u16 oldValue, u16 srcValue, u16 result) {
            (over << flagsBitPosition[OF]);
 }
 
+char* str_trim(char* str) {
+    char* end = str + strlen(str) - 1;
+    char* start = str;
 
+    // Trim trailing
+    while (end >= start && isspace((unsigned char)*end)) {
+        *end = '\0';
+        end--;
+    }
+
+    // If string is all whitespace
+    if (end < start) return 0;
+
+    // Trim leading
+    while (isspace((unsigned char)*start)) start++;
+
+    int char_count = (end - start) + 1;
+    if (start != str) {
+        memmove(str, start, char_count);
+        str[char_count] = '\0';
+    }
+    return start;
+}
