@@ -406,5 +406,6 @@ typedef struct {
         u16 instIdx;
         u16 byteOffset;
     } ip;
+    u8 mem[64*1024];
 } Computer;
 

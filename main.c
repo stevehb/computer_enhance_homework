@@ -12,14 +12,17 @@
 #include "types.c"
 #include "utils.c"
 
-//#define DEFAULT_FILENAME    "hw/listing_0043_immediate_movs"
-//#define DEFAULT_FILENAME    "hw/listing_0044_register_movs"
-//#define DEFAULT_FILENAME    "hw/listing_0045_challenge_register_movs"
-//#define DEFAULT_FILENAME    "hw/listing_0046_add_sub_cmp"
-//#define DEFAULT_FILENAME    "hw/listing_0047_challenge_flags"
+// #define DEFAULT_FILENAME    "hw/listing_0043_immediate_movs"
+// #define DEFAULT_FILENAME    "hw/listing_0044_register_movs"
+// #define DEFAULT_FILENAME    "hw/listing_0045_challenge_register_movs"
+// #define DEFAULT_FILENAME    "hw/listing_0046_add_sub_cmp"
+// #define DEFAULT_FILENAME    "hw/listing_0047_challenge_flags"
 // #define DEFAULT_FILENAME    "hw/listing_0048_ip_register"
 // #define DEFAULT_FILENAME    "hw/listing_0049_conditional_jumps"
-#define DEFAULT_FILENAME    "hw/listing_0050_challenge_jumps"
+// #define DEFAULT_FILENAME    "hw/listing_0050_challenge_jumps"
+// #define DEFAULT_FILENAME    "hw/listing_0051_memory_mov"
+// #define DEFAULT_FILENAME    "hw/listing_0052_memory_add_loop"
+#define DEFAULT_FILENAME    "hw/listing_0053_add_loop_challenge"
 
 u8 getBitValue(u8* ptr, BitField bits) {
     if(bits.type == BF_NONE || bits.type == BF_COUNT) {
@@ -280,10 +283,10 @@ u16 srgRead(Computer* comp, SegmentRegisterEnum srgIdx) {
         case SRG_CS: return comp->cs.word;
         case SRG_SS: return comp->ss.word;
         case SRG_DS: return comp->ds.word;
-        case SRG_COUNT:
-            fprintf(stderr, "ERROR: Invalid read segment register index %d (SRG_COUNT=%d)\n", srgIdx, SRG_COUNT);
-            exit(1);
+        case SRG_COUNT: break;
     }
+    fprintf(stderr, "ERROR: Invalid read segment register index %d (SRG_COUNT=%d)\n", srgIdx, SRG_COUNT);
+    exit(1);
 }
 u16 srgWrite(Computer* comp, SegmentRegisterEnum srgIdx, u16 value) {
     assert(srgIdx < SRG_COUNT);
@@ -319,10 +322,10 @@ u16 regRead(Computer* comp, RegisterEnum regIdx) {
         case REG_BP: return comp->bp.word;
         case REG_SI: return comp->si.word;
         case REG_DI: return comp->di.word;
-        case REG_COUNT:
-            fprintf(stderr, "ERROR: Invalid read register index %d (REG_COUNT=%d)\n", regIdx, REG_COUNT);
-            exit(1);
+        case REG_COUNT: break;
     }
+    fprintf(stderr, "ERROR: Invalid read register index %d (REG_COUNT=%d)\n", regIdx, REG_COUNT);
+    exit(1);
 }
 u16 regWrite(Computer* comp, RegisterEnum regIdx, u16 value) {
     assert(regIdx < REG_COUNT);
@@ -351,6 +354,41 @@ u16 regWrite(Computer* comp, RegisterEnum regIdx, u16 value) {
     return oldValue;
 }
 
+u16 calcEffectiveAdress(Computer* comp, EffectiveAddressEnum eaIdx, s16 disp) {
+    assert(eaIdx <= EA_COUNT);
+    u16 ea = 0;
+    switch (eaIdx) {
+    case EA_BX_SI: ea = regRead(comp, REG_BX) + regRead(comp, REG_SI); break;
+    case EA_BX_DI: ea = regRead(comp, REG_BX) + regRead(comp, REG_DI); break;
+    case EA_BP_SI: ea = regRead(comp, REG_BP) + regRead(comp, REG_SI); break;
+    case EA_BP_DI: ea = regRead(comp, REG_BP) + regRead(comp, REG_DI); break;
+    case EA_SI:    ea = regRead(comp, REG_SI); break;
+    case EA_DI:    ea = regRead(comp, REG_DI); break;
+    case EA_BP:    ea = regRead(comp, REG_BP); break;
+    case EA_BX:    ea = regRead(comp, REG_BX); break;
+    case EA_COUNT: break;
+    }
+    return ea + disp;
+}
+u16 memRead(Computer* comp, u16 addr, bool isWord) {
+    u8 lo = comp->mem[addr];
+    u8 hi = isWord ? comp->mem[addr+1] : 0;
+    return (hi << 8) | lo;
+}
+u16 memWrite(Computer* comp, u16 addr, u16 value, bool isWord) {
+    u8 oldLo = comp->mem[addr];
+    u8 oldHi = isWord ? comp->mem[addr+1] : 0;
+    u8 lo = value & 0xff;
+    u8 hi = (value >> 8) & 0xff;
+    comp->mem[addr] = lo;
+    if (isWord) {
+        comp->mem[addr+1] = hi;
+    }
+    return (oldHi << 8) | oldLo;
+}
+
+
+
 bool flagsRead(Computer* comp, FlagsRegisterEnum flag) {
     assert(flag < FLAG_REG_COUNT);
     u16 mask = 1 << flagsBitPosition[flag];
@@ -374,9 +412,9 @@ char* flagsToStr(Computer* comp) {
     return str;
 }
 
-char* statusToStr(Computer* comp, bool ip, bool genReg, bool extReg, bool segReg, bool flags) {
+char* statusToStr(Computer* comp, bool ip, bool genReg, bool extReg, bool segReg, bool flags, u8 memCount, u16 addr) {
     char *str = (char *) next_scratch;
-    next_scratch += 256;
+    next_scratch += 512;
     if(ip) {
         sprintfcat(str, "ip[0x%02x:%02d] ", comp->ip.byteOffset, comp->ip.instIdx);
     }
@@ -410,12 +448,14 @@ char* statusToStr(Computer* comp, bool ip, bool genReg, bool extReg, bool segReg
     }
     if(flags) {
         const char* flagsStr = flagsToStr(comp);
-        sprintfcat(str, "%s", flagsStr);
+        sprintfcat(str, "%s ", flagsStr);
+    }
+    if (memCount > 0) {
+        sprintfcat(str, "%d:[%s] ", addr, bytesToHexStr(&comp->mem[addr], memCount));
     }
     return str;
 }
 
-int jumpCount = 0;
 // ReSharper disable CppDFAUnreachableCode
 char* executeInst(Computer *comp, ParsedInst* program, const int instCount) {
     assert(comp->ip.instIdx < instCount);
@@ -427,7 +467,10 @@ char* executeInst(Computer *comp, ParsedInst* program, const int instCount) {
     switch(pi.src.type) {
         case OPD_REG:  srcValue = regRead(comp, pi.src.regOpd.regIdx); break;
         case OPD_SRG:  srcValue = srgRead(comp, pi.src.srgOpd.srgIdx); break;
-        case OPD_DISP: srcValue = pi.src.dispOpd.disp; break;
+        case OPD_DISP: {
+            u16 addr = calcEffectiveAdress(comp, pi.src.dispOpd.eaIdx, pi.src.dispOpd.disp);
+            srcValue = memRead(comp, addr, pi.w);
+        } break;
         case OPD_DATA: srcValue = pi.src.dataOpd.data; break;
         case OPD_ADDR: srcValue = pi.src.addrOpd.addr; break;
         case OPD_INC8: srcValue = pi.src.inc8Opd.inc8; break;
@@ -453,9 +496,13 @@ char* executeInst(Computer *comp, ParsedInst* program, const int instCount) {
                 oldValue = srgWrite(comp, pi.dst.srgOpd.srgIdx, srcValue);
                 regName = segmentRegisterStrs[pi.dst.srgOpd.srgIdx];
             }
+            if (pi.dst.type == OPD_DISP) {
+                u16 addr = calcEffectiveAdress(comp, pi.dst.dispOpd.eaIdx, pi.dst.dispOpd.disp);
+                oldValue = memWrite(comp, addr, srcValue, pi.w);
+                newValue = memRead(comp, addr, pi.w);
+            }
         } break;
         case ADD: {
-            assert(pi.dst.type == OPD_REG);
             if(pi.dst.type == OPD_REG) {
                 oldValue = regRead(comp, REGISTER_PARENT_MAP[pi.dst.regOpd.regIdx]);
                 regWrite(comp, pi.dst.regOpd.regIdx, oldValue + srcValue);
@@ -463,6 +510,12 @@ char* executeInst(Computer *comp, ParsedInst* program, const int instCount) {
                 regName = registerNameStrs[REGISTER_PARENT_MAP[pi.dst.regOpd.regIdx]];
                 flagsSet(comp, calcFlags(true, oldValue, srcValue, newValue));
                 flagsStr = flagsToStr(comp);
+            }
+            if (pi.dst.type == OPD_DISP) {
+                u16 addr = calcEffectiveAdress(comp, pi.dst.dispOpd.eaIdx, pi.dst.dispOpd.disp);
+                oldValue = memRead(comp, addr, pi.w);
+                memWrite(comp, addr, oldValue + srcValue, pi.w);
+                newValue = memRead(comp, addr, pi.w);
             }
         } break;
         case SUB: {
@@ -488,8 +541,6 @@ char* executeInst(Computer *comp, ParsedInst* program, const int instCount) {
         case JMP: {
             assert(pi.dst.type == OPD_INC8);
 
-            jumpCount++;
-
             // For logic, look up Table 2-15
             if (pi.type == JMP_LOOP || pi.type == JMP_LOOPZ || pi.type == JMP_LOOPNZ) {
                 oldValue = regRead(comp, REG_CX);
@@ -498,7 +549,6 @@ char* executeInst(Computer *comp, ParsedInst* program, const int instCount) {
                 regName = registerNameStrs[REG_CX];
                 // execNotes = asprintfcat(execNotes, "    [%02d] jump %s: %s 0x%02x -> 0x%02x\n", jumpCount, instructionDescriptors[pi.type].instStr, regName, oldValue, newValue);
             }
-
             u8 cf = flagsRead(comp, CF);
             u8 zf = flagsRead(comp, ZF);
             u8 sf = flagsRead(comp, SF);
@@ -506,32 +556,30 @@ char* executeInst(Computer *comp, ParsedInst* program, const int instCount) {
             u8 pf = flagsRead(comp, PF);
             u16 cx = regRead(comp, REG_CX);
             bool makeJump =
-                    (pi.type == JMP_JZ   && (zf == 1)) ||
-                    (pi.type == JMP_JNZ  && (zf == 0)) ||
-                    (pi.type == JMP_JL   && (sf ^ of) == 1) ||
-                    (pi.type == JMP_JNL  && (sf ^ of) == 0) ||
-                    (pi.type == JMP_JG   && (zf | (sf ^ of)) == 0) ||
-                    (pi.type == JMP_JNG  && (zf | (sf ^ of)) == 1) ||
-                    (pi.type == JMP_JB   && cf == 1) ||
-                    (pi.type == JMP_JNB  && cf == 0) ||
-                    (pi.type == JMP_JA   && (cf | zf) == 0) ||
-                    (pi.type == JMP_JNA  && (cf | zf) == 1) ||
-                    (pi.type == JMP_JP   && pf == 1) ||
-                    (pi.type == JMP_JNP  && pf == 0) ||
-                    (pi.type == JMP_JO   && of == 1) ||
-                    (pi.type == JMP_JNO  && of == 0) ||
-                    (pi.type == JMP_JS   && sf == 1) ||
-                    (pi.type == JMP_JNS  && sf == 0) ||
-                    (pi.type == JMP_JCXZ && cx == 0) ||
-                    (pi.type == JMP_LOOP && cx == 0) ||
+                    (pi.type == JMP_JZ     && (zf == 1)) ||
+                    (pi.type == JMP_JNZ    && (zf == 0)) ||
+                    (pi.type == JMP_JL     && (sf ^ of) == 1) ||
+                    (pi.type == JMP_JNL    && (sf ^ of) == 0) ||
+                    (pi.type == JMP_JG     && (zf | (sf ^ of)) == 0) ||
+                    (pi.type == JMP_JNG    && (zf | (sf ^ of)) == 1) ||
+                    (pi.type == JMP_JB     && cf == 1) ||
+                    (pi.type == JMP_JNB    && cf == 0) ||
+                    (pi.type == JMP_JA     && (cf | zf) == 0) ||
+                    (pi.type == JMP_JNA    && (cf | zf) == 1) ||
+                    (pi.type == JMP_JP     && pf == 1) ||
+                    (pi.type == JMP_JNP    && pf == 0) ||
+                    (pi.type == JMP_JO     && of == 1) ||
+                    (pi.type == JMP_JNO    && of == 0) ||
+                    (pi.type == JMP_JS     && sf == 1) ||
+                    (pi.type == JMP_JNS    && sf == 0) ||
+                    (pi.type == JMP_JCXZ   && cx == 0) ||
+                    (pi.type == JMP_LOOP   && cx == 0) ||
                     (pi.type == JMP_LOOPZ  && (cx != 0 && zf == 1)) ||
                     (pi.type == JMP_LOOPNZ && (cx != 0 && zf == 0));
             if(!makeJump) {
-                execNotes = asprintfcat(execNotes, "    [%02d] NOT TAKING the jump: %s %d\n", jumpCount, instructionDescriptors[pi.type].instStr, pi.dst.inc8Opd.inc8);
                 break;
             }
-
-            execNotes = asprintfcat(execNotes, "    [%02d] TAKING the jump: %s %d\n", jumpCount, instructionDescriptors[pi.type].instStr, pi.dst.inc8Opd.inc8);
+            // execNotes = asprintfcat(execNotes, "    TAKING the jump: %s %d\n", instructionDescriptors[pi.type].instStr, pi.dst.inc8Opd.inc8);
 
             s8 incVal = pi.dst.inc8Opd.inc8;
             s8 incDir = incVal < 0 ? -1 : 1;
@@ -631,8 +679,8 @@ int main(int argc, const char** argv) {
         next_scratch = scratch;
         char* asmLine = parsedInstToStr(program[comp.ip.instIdx]);
         char* notes = executeInst(&comp, program, instCount);
-        char* status = statusToStr(&comp, true, true, false, false, true);
-        fprintf(out, "%-16s ; %s\n", asmLine, status);
+        char* status = statusToStr(&comp, true, true, true, false, true, 6, 1000);
+        fprintf(out, "%-24s ; %s\n", asmLine, status);
         if (notes != NULL) {
             fprintf(out, "%s\n", notes);
         }
@@ -655,7 +703,7 @@ int main(int argc, const char** argv) {
             fprintf(out, "    %s: 0x%04x (%d)\n", segmentRegisterStrs[ri], value, value);
         }
         fprintf(out, "    ----\n");
-        fprintf(out, "    ip: 0x%x (idx=%d)\n", comp.ip.byteOffset, comp.ip.instIdx);
+        fprintf(out, "    ip: 0x%04x (%03d) idx=%d\n", comp.ip.byteOffset, comp.ip.byteOffset, comp.ip.instIdx);
         fprintf(out, " flags: %s\n", flagsToStr(&comp));
     }
     return 0;

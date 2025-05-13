@@ -9,6 +9,7 @@ static u8 scratch[BUFF_SIZE];
 static u8* next_scratch = scratch;
 
 #define BOOL_STR(b) ((b) ? "TRUE" : "FALSE")
+#define BOOL_CHR(b) ((b) ? 'T' : 'F')
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
@@ -18,6 +19,7 @@ char* byteToBinaryStr(u8 byte) {
     for(int i = 7; i >= 0; i--) {
         str[7-i] = ((byte >> i) & 1) ? '1' : '0';
     }
+    str[8] = '\0';
     return str;
 }
 char* bytesToBinaryStr(u8* bytes, int size) {
