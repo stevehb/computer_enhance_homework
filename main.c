@@ -12,17 +12,11 @@
 #include "types.c"
 #include "utils.c"
 
-// #define DEFAULT_FILENAME    "hw/listing_0043_immediate_movs"
-// #define DEFAULT_FILENAME    "hw/listing_0044_register_movs"
-// #define DEFAULT_FILENAME    "hw/listing_0045_challenge_register_movs"
-// #define DEFAULT_FILENAME    "hw/listing_0046_add_sub_cmp"
-// #define DEFAULT_FILENAME    "hw/listing_0047_challenge_flags"
-// #define DEFAULT_FILENAME    "hw/listing_0048_ip_register"
-// #define DEFAULT_FILENAME    "hw/listing_0049_conditional_jumps"
-// #define DEFAULT_FILENAME    "hw/listing_0050_challenge_jumps"
 // #define DEFAULT_FILENAME    "hw/listing_0051_memory_mov"
 // #define DEFAULT_FILENAME    "hw/listing_0052_memory_add_loop"
-#define DEFAULT_FILENAME    "hw/listing_0053_add_loop_challenge"
+// #define DEFAULT_FILENAME    "hw/listing_0053_add_loop_challenge"
+// #define DEFAULT_FILENAME    "hw/listing_0054_draw_rectangle"
+#define DEFAULT_FILENAME    "hw/listing_0055_challenge_rectangle"
 
 u8 getBitValue(u8* ptr, BitField bits) {
     if(bits.type == BF_NONE || bits.type == BF_COUNT) {
@@ -354,7 +348,7 @@ u16 regWrite(Computer* comp, RegisterEnum regIdx, u16 value) {
     return oldValue;
 }
 
-u16 calcEffectiveAdress(Computer* comp, EffectiveAddressEnum eaIdx, s16 disp) {
+u16 calcEffectiveAddress(Computer* comp, EffectiveAddressEnum eaIdx, s16 disp) {
     assert(eaIdx <= EA_COUNT);
     u16 ea = 0;
     switch (eaIdx) {
@@ -412,50 +406,6 @@ char* flagsToStr(Computer* comp) {
     return str;
 }
 
-char* statusToStr(Computer* comp, bool ip, bool genReg, bool extReg, bool segReg, bool flags, u8 memCount, u16 addr) {
-    char *str = (char *) next_scratch;
-    next_scratch += 512;
-    if(ip) {
-        sprintfcat(str, "ip[0x%02x:%02d] ", comp->ip.byteOffset, comp->ip.instIdx);
-    }
-    if(genReg || extReg) {
-        sprintfcat(str, "[");
-        if(genReg) {
-            u16 ax = regRead(comp, REG_AX),
-                bx = regRead(comp, REG_BX),
-                cx = regRead(comp, REG_CX),
-                dx = regRead(comp, REG_DX);
-            sprintfcat(str, "%04x %04x %04x %04x", ax, bx, cx, dx);
-        }
-        if(genReg && extReg) {
-            sprintfcat(str, " ");
-        }
-        if(extReg) {
-            u16 sp = regRead(comp, REG_SP),
-                bp = regRead(comp, REG_BP),
-                si = regRead(comp, REG_SI),
-                di = regRead(comp, REG_DI);
-            sprintfcat(str, "%04x %04x %04x %04x", sp, bp, si, di);
-        }
-        sprintfcat(str, "] ");
-    }
-    if(segReg) {
-        u16 es = srgRead(comp, SRG_ES),
-            cs = srgRead(comp, SRG_CS),
-            ss = srgRead(comp, SRG_SS),
-            ds = srgRead(comp, SRG_DS);
-        sprintfcat(str, "[%04x %04x %04x %04x] ", es, cs, ss, ds);
-    }
-    if(flags) {
-        const char* flagsStr = flagsToStr(comp);
-        sprintfcat(str, "%s ", flagsStr);
-    }
-    if (memCount > 0) {
-        sprintfcat(str, "%d:[%s] ", addr, bytesToHexStr(&comp->mem[addr], memCount));
-    }
-    return str;
-}
-
 // ReSharper disable CppDFAUnreachableCode
 char* executeInst(Computer *comp, ParsedInst* program, const int instCount) {
     assert(comp->ip.instIdx < instCount);
@@ -468,7 +418,7 @@ char* executeInst(Computer *comp, ParsedInst* program, const int instCount) {
         case OPD_REG:  srcValue = regRead(comp, pi.src.regOpd.regIdx); break;
         case OPD_SRG:  srcValue = srgRead(comp, pi.src.srgOpd.srgIdx); break;
         case OPD_DISP: {
-            u16 addr = calcEffectiveAdress(comp, pi.src.dispOpd.eaIdx, pi.src.dispOpd.disp);
+            u16 addr = calcEffectiveAddress(comp, pi.src.dispOpd.eaIdx, pi.src.dispOpd.disp);
             srcValue = memRead(comp, addr, pi.w);
         } break;
         case OPD_DATA: srcValue = pi.src.dataOpd.data; break;
@@ -497,12 +447,14 @@ char* executeInst(Computer *comp, ParsedInst* program, const int instCount) {
                 regName = segmentRegisterStrs[pi.dst.srgOpd.srgIdx];
             }
             if (pi.dst.type == OPD_DISP) {
-                u16 addr = calcEffectiveAdress(comp, pi.dst.dispOpd.eaIdx, pi.dst.dispOpd.disp);
+                u16 addr = calcEffectiveAddress(comp, pi.dst.dispOpd.eaIdx, pi.dst.dispOpd.disp);
                 oldValue = memWrite(comp, addr, srcValue, pi.w);
                 newValue = memRead(comp, addr, pi.w);
+                execNotes = asprintfcat(execNotes, "%d", addr);
             }
         } break;
         case ADD: {
+            assert(pi.dst.type == OPD_REG);
             if(pi.dst.type == OPD_REG) {
                 oldValue = regRead(comp, REGISTER_PARENT_MAP[pi.dst.regOpd.regIdx]);
                 regWrite(comp, pi.dst.regOpd.regIdx, oldValue + srcValue);
@@ -511,12 +463,12 @@ char* executeInst(Computer *comp, ParsedInst* program, const int instCount) {
                 flagsSet(comp, calcFlags(true, oldValue, srcValue, newValue));
                 flagsStr = flagsToStr(comp);
             }
-            if (pi.dst.type == OPD_DISP) {
-                u16 addr = calcEffectiveAdress(comp, pi.dst.dispOpd.eaIdx, pi.dst.dispOpd.disp);
-                oldValue = memRead(comp, addr, pi.w);
-                memWrite(comp, addr, oldValue + srcValue, pi.w);
-                newValue = memRead(comp, addr, pi.w);
-            }
+            // if (pi.dst.type == OPD_DISP) {
+            //     u16 addr = calcEffectiveAddress(comp, pi.dst.dispOpd.eaIdx, pi.dst.dispOpd.disp);
+            //     oldValue = memRead(comp, addr, pi.w);
+            //     memWrite(comp, addr, oldValue + srcValue, pi.w);
+            //     newValue = memRead(comp, addr, pi.w);
+            // }
         } break;
         case SUB: {
             assert(pi.dst.type == OPD_REG);
@@ -573,7 +525,7 @@ char* executeInst(Computer *comp, ParsedInst* program, const int instCount) {
                     (pi.type == JMP_JS     && sf == 1) ||
                     (pi.type == JMP_JNS    && sf == 0) ||
                     (pi.type == JMP_JCXZ   && cx == 0) ||
-                    (pi.type == JMP_LOOP   && cx == 0) ||
+                    (pi.type == JMP_LOOP   && cx != 0) ||
                     (pi.type == JMP_LOOPZ  && (cx != 0 && zf == 1)) ||
                     (pi.type == JMP_LOOPNZ && (cx != 0 && zf == 0));
             if(!makeJump) {
@@ -606,6 +558,63 @@ char* executeInst(Computer *comp, ParsedInst* program, const int instCount) {
         } break;
     }
     return execNotes;
+}
+
+char* statusToStr(Computer* comp, bool ip, bool genReg, bool extReg, bool segReg, bool flags, u8 memCount, u16 addr) {
+    char *str = (char *) next_scratch;
+    next_scratch += 512;
+    if(ip) {
+        sprintfcat(str, "ip[0x%02x:%02d] ", comp->ip.byteOffset, comp->ip.instIdx);
+    }
+    if(genReg || extReg) {
+        sprintfcat(str, "[");
+        if(genReg) {
+            u16 ax = regRead(comp, REG_AX),
+                bx = regRead(comp, REG_BX),
+                cx = regRead(comp, REG_CX),
+                dx = regRead(comp, REG_DX);
+            sprintfcat(str, "%04x %04x %04x %04x", ax, bx, cx, dx);
+        }
+        if(genReg && extReg) {
+            sprintfcat(str, " ");
+        }
+        if(extReg) {
+            u16 sp = regRead(comp, REG_SP),
+                bp = regRead(comp, REG_BP),
+                si = regRead(comp, REG_SI),
+                di = regRead(comp, REG_DI);
+            sprintfcat(str, "%04x %04x %04x %04x", sp, bp, si, di);
+        }
+        sprintfcat(str, "] ");
+    }
+    if(segReg) {
+        u16 es = srgRead(comp, SRG_ES),
+            cs = srgRead(comp, SRG_CS),
+            ss = srgRead(comp, SRG_SS),
+            ds = srgRead(comp, SRG_DS);
+        sprintfcat(str, "[%04x %04x %04x %04x] ", es, cs, ss, ds);
+    }
+    if(flags) {
+        const char* flagsStr = flagsToStr(comp);
+        sprintfcat(str, "%s ", flagsStr);
+    }
+    if (memCount > 0) {
+        sprintfcat(str, "%05d:[%s] ", addr, bytesToHexStr(&comp->mem[addr], memCount));
+    }
+    return str;
+}
+
+void dumpMem(Computer* comp, u16 offset, u16 size, const char* filename) {
+    FILE* file = fopen(filename, "wb");
+    if (file == NULL) {
+        fprintf(stderr, "Failed to open file %s: %s\n", filename, strerror(errno));
+        exit(1);
+    }
+    u32 writtenBytes = fwrite(&comp->mem[offset], 1, size, file);
+    if (writtenBytes != size) {
+        fprintf(stderr, "Failed writing to %s: expected %d bytes, wrote %d bytes\n", filename, size, writtenBytes);
+        exit(1);
+    }
 }
 
 int main(int argc, const char** argv) {
@@ -679,11 +688,15 @@ int main(int argc, const char** argv) {
         next_scratch = scratch;
         char* asmLine = parsedInstToStr(program[comp.ip.instIdx]);
         char* notes = executeInst(&comp, program, instCount);
-        char* status = statusToStr(&comp, true, true, true, false, true, 6, 1000);
-        fprintf(out, "%-24s ; %s\n", asmLine, status);
+        u16 count = 0;
+        u16 addr = 0;
         if (notes != NULL) {
-            fprintf(out, "%s\n", notes);
+            addr = atoi(notes) - 4;
+            count = 9;
+            // fprintf(out, "%s\n", notes);
         }
+        char* status = statusToStr(&comp, true, true, true, false, false, count, addr);
+        fprintf(out, "%-30s ; %s\n", asmLine, status);
     }
 
     // Print final state
@@ -706,5 +719,20 @@ int main(int argc, const char** argv) {
         fprintf(out, "    ip: 0x%04x (%03d) idx=%d\n", comp.ip.byteOffset, comp.ip.byteOffset, comp.ip.instIdx);
         fprintf(out, " flags: %s\n", flagsToStr(&comp));
     }
+
+    // Dump state
+    {
+        char* basename = strchr(filename, '/') + 1;
+        char* suffix = ".data";
+        char* outFilename = (char*) next_scratch;
+        sprintf(outFilename, "%s%s", basename, suffix);
+        next_scratch += strlen(outFilename);
+
+        int offset = 64*4;
+        int size = 64*64*4;
+        dumpMem(&comp, offset, size, outFilename);
+        fprintf(out, "Memory dumped: offset=0x%04x, size=%d bytes, filename=%s\n", offset, size, outFilename);
+    }
+
     return 0;
 }

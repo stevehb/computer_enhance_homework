@@ -1,4 +1,5 @@
 tester*
+*.data
 
 # CLion specific
 .idea/
