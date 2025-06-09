@@ -349,6 +349,95 @@ const char* OPERAND_TYPE_STRS[OPD_COUNT] = {
 };
 #undef OPERAND_TYPE_MAP
 
+/*
+ * FROM TABLE 2-21 in the 8086 Manual
+ */
+typedef struct InstClocks {
+    InstType type;
+    OperandType dstType, srcType;
+    u8 clocks;
+    bool needsEA;
+} InstClocks;
+#define T true
+#define F false
+#define CLOCK(t,d,s,c,e)  (InstClocks) { .type = t, .dstType = d, .srcType = s, .clocks = c, .needsEA = e },
+#define JCLOCK(t,taken,c) (InstClocks) { .type = t, .dstType = OPD_INC8, .srcType = (OperandType) taken, .clocks = c, .needsEA = F },
+InstClocks INST_CLOCKS[] = {
+    CLOCK(MOV_MEM_ACC, OPD_REG,  OPD_DISP, 10, F)
+    CLOCK(MOV_ACC_MEM, OPD_DISP, OPD_REG,  10, F)
+    CLOCK(MOV_RGM_REG, OPD_REG,  OPD_REG,   2, F)
+    CLOCK(MOV_RGM_REG, OPD_REG,  OPD_DISP,  8, T)
+    CLOCK(MOV_RGM_REG, OPD_DISP, OPD_REG,   9, T)
+    CLOCK(MOV_IMM_REG, OPD_REG,  OPD_DATA,  4, F)
+    CLOCK(MOV_IMM_RGM, OPD_DISP, OPD_DATA, 10, T)
+    CLOCK(MOV_RGM_SRG, OPD_SRG,  OPD_REG,   2, F)
+    CLOCK(MOV_RGM_SRG, OPD_SRG,  OPD_DISP,  8, T)
+    CLOCK(MOV_SRG_RGM, OPD_REG,  OPD_SRG,   2, F)
+    CLOCK(MOV_SRG_RGM, OPD_DISP, OPD_SRG,   9, T)
+    CLOCK(ADD_RGM_REG, OPD_REG,  OPD_REG,   3, F)
+    CLOCK(ADD_RGM_REG, OPD_REG,  OPD_DISP,  9, T)
+    CLOCK(ADD_RGM_REG, OPD_DISP, OPD_REG,  16, T)
+    CLOCK(ADD_IMM_RGM, OPD_REG,  OPD_DATA,  4, F)
+    CLOCK(ADD_IMM_RGM, OPD_DISP, OPD_DATA, 17, T)
+    CLOCK(ADD_IMM_ACC, OPD_REG,  OPD_DATA,  4, F)
+    CLOCK(CMP_RGM_REG, OPD_REG,  OPD_REG,   3, F)
+    CLOCK(CMP_RGM_REG, OPD_REG,  OPD_DISP,  9, T)
+    CLOCK(CMP_RGM_REG, OPD_DISP, OPD_REG,   9, T)
+    CLOCK(CMP_IMM_RGM, OPD_REG,  OPD_DATA,  4, F)
+    CLOCK(CMP_IMM_RGM, OPD_DISP, OPD_DATA, 10, T)
+    CLOCK(CMP_IMM_ACC, OPD_REG,  OPD_DATA,  4, F)
+    CLOCK(SUB_RGM_REG, OPD_REG,  OPD_REG,   3, F)
+    CLOCK(SUB_RGM_REG, OPD_REG,  OPD_DISP,  9, T)
+    CLOCK(SUB_RGM_REG, OPD_DISP, OPD_REG,  16, T)
+    CLOCK(SUB_IMM_ACC, OPD_REG,  OPD_DATA,  4, F)
+    CLOCK(SUB_IMM_RGM, OPD_REG,  OPD_DATA,  4, F)
+    CLOCK(SUB_IMM_RGM, OPD_DISP, OPD_DATA, 17, T)
+    JCLOCK(JMP_JZ,     F,  4)
+    JCLOCK(JMP_JZ,     T, 16)
+    JCLOCK(JMP_JNZ,    F,  4)
+    JCLOCK(JMP_JNZ,    T, 16)
+    JCLOCK(JMP_JL,     F,  4)
+    JCLOCK(JMP_JL,     T, 16)
+    JCLOCK(JMP_JNL,    F,  4)
+    JCLOCK(JMP_JNL,    T, 16)
+    JCLOCK(JMP_JG,     F,  4)
+    JCLOCK(JMP_JG,     T, 16)
+    JCLOCK(JMP_JNG,    F,  4)
+    JCLOCK(JMP_JNG,    T, 16)
+    JCLOCK(JMP_JB,     F,  4)
+    JCLOCK(JMP_JB,     T, 16)
+    JCLOCK(JMP_JNB,    F,  4)
+    JCLOCK(JMP_JNB,    T, 16)
+    JCLOCK(JMP_JA,     F,  4)
+    JCLOCK(JMP_JA,     T, 16)
+    JCLOCK(JMP_JNA,    F,  4)
+    JCLOCK(JMP_JNA,    T, 16)
+    JCLOCK(JMP_JP,     F,  4)
+    JCLOCK(JMP_JP,     T, 16)
+    JCLOCK(JMP_JNP,    F,  4)
+    JCLOCK(JMP_JNP,    T, 16)
+    JCLOCK(JMP_JO,     F,  4)
+    JCLOCK(JMP_JO,     T, 16)
+    JCLOCK(JMP_JNO,    F,  4)
+    JCLOCK(JMP_JNO,    T, 16)
+    JCLOCK(JMP_JS,     F,  4)
+    JCLOCK(JMP_JS,     T, 16)
+    JCLOCK(JMP_JNS,    F,  4)
+    JCLOCK(JMP_JNS,    T, 16)
+    JCLOCK(JMP_LOOP,   F,  5)
+    JCLOCK(JMP_LOOP,   T, 17)
+    JCLOCK(JMP_JCXZ,   F,  6)
+    JCLOCK(JMP_JCXZ,   T, 18)
+    JCLOCK(JMP_LOOPZ,  F,  6)
+    JCLOCK(JMP_LOOPZ,  T, 18)
+    JCLOCK(JMP_LOOPNZ, F,  5)
+    JCLOCK(JMP_LOOPNZ, T, 19)
+};
+typedef struct ClockCounts {
+    u8 base;
+    u8 ea;
+    u8 oddAlign;
+} ClockCounts;
 
 typedef struct Operand {
     OperandType type;
@@ -379,8 +468,19 @@ typedef struct ParsedInst {
     u8 dataLo, dataHi;
     u8 addrLo, addrHi;
     Operand src, dst;
+    u8 baseClocks, eaClocks, oddAlignClocks;
 } ParsedInst;
 
+typedef struct  {
+    RegisterEnum regChanged;
+    SegmentRegisterEnum srgChanged;
+    u16 oldValue;
+    u16 newValue;
+    bool memChanged;
+    u16 memAddr;
+    enum { NO_JMP, TAKEN, NOT_TAKEN, } jmpTaken;
+    s8 jmpInc8;
+} ExecLog;
 
 typedef union SimReg {
     u16 word;
@@ -407,5 +507,14 @@ typedef struct {
         u16 byteOffset;
     } ip;
     u8 mem[64*1024];
+    u16 totalClocks;
 } Computer;
 
+struct {
+    bool params_printDisasm;
+    bool params_printClocks;
+    bool params_execComputer;
+    bool params_dumpMemory;
+    char inputFilename[256];
+    char dumpFilename[256];
+} ProgState = { 0 };

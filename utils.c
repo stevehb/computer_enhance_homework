@@ -57,12 +57,13 @@ char* bytesToHexStr(u8* bytes, int size) {
     return start;
 }
 
+__attribute__((format(printf, 2, 3)))
 char* asprintfcat(const char* oldStr, const char *format, ...) {
     char* newStr = (char*) next_scratch;
-    va_list args1;
-    va_start(args1, format);
-    next_scratch += vsprintf(newStr, format, args1) + 1;
-    va_end(args1);
+    va_list args;
+    va_start(args, format);
+    next_scratch += vsprintf(newStr, format, args) + 1;
+    va_end(args);
 
     if (oldStr == NULL) {
         return newStr;
@@ -72,7 +73,8 @@ char* asprintfcat(const char* oldStr, const char *format, ...) {
     strcat(finalStr, newStr);
     next_scratch += strlen(finalStr) + 1;
     return finalStr;
-};
+}
+__attribute__((format(printf, 2, 3)))
 int sprintfcat(char *dst, const char *format, ...) {
     size_t len = strlen(dst);
     va_list args;
