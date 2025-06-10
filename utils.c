@@ -97,7 +97,7 @@ u8 hasEvenParity(u8 bytes) {
     bytes ^= bytes >> 1;
     return (~bytes & 1);
 }
-u16 calcFlags(bool isAdd, u16 oldValue, u16 srcValue, u16 result) {
+u16 calcFlags(bool isAdd, u16 dstValue, u16 srcValue, u16 result) {
     bool carry;
     bool parity = hasEvenParity((u8)result);
     bool auxCarry;
@@ -109,21 +109,21 @@ u16 calcFlags(bool isAdd, u16 oldValue, u16 srcValue, u16 result) {
     bool direction = false;
 
     if(isAdd) {
-        carry = result < oldValue || result < srcValue;
+        carry = result < dstValue || result < srcValue;
     } else {
-        carry = srcValue > oldValue;
+        carry = srcValue > dstValue;
     }
     if(isAdd) {
-        auxCarry = ((result & 0xF) < (oldValue & 0xF)) || ((result & 0xF) < (srcValue & 0xF));
+        auxCarry = ((result & 0xF) < (dstValue & 0xF)) || ((result & 0xF) < (srcValue & 0xF));
     } else {
-        auxCarry = (srcValue & 0xF) > (oldValue & 0xF);
+        auxCarry = (srcValue & 0xF) > (dstValue & 0xF);
     }
     if(isAdd) {
-        u16 sameSign = ~(oldValue ^ srcValue);
-        u16 diffSign = (oldValue ^ result);
+        u16 sameSign = ~(dstValue ^ srcValue);
+        u16 diffSign = (dstValue ^ result);
         over = ((sameSign & diffSign) & 0x8000) != 0;
     } else {
-        u16 diffSign = (oldValue ^ srcValue);
+        u16 diffSign = (dstValue ^ srcValue);
         u16 sameSign = ~(srcValue ^ result);
         over = ((diffSign & sameSign) & 0x8000) != 0;
     }

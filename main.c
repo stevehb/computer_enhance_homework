@@ -506,7 +506,6 @@ char* executeInst(Computer *comp, ParsedInst* program, const int instCount) {
             break;
     }
 
-
     switch(pi.action) {
         case MOV: {
             const char* dstName = "";
@@ -653,7 +652,7 @@ char* executeInst(Computer *comp, ParsedInst* program, const int instCount) {
                 }
                 comp->ip.byteOffset += incDir * instSize;
                 bytesJumped += instSize;
-            } while (comp->ip.instIdx >= 0 && comp->ip.instIdx < instCount);
+            } while (/*comp->ip.instIdx >= 0 &&*/ comp->ip.instIdx < instCount);
         } break;
     }
 
