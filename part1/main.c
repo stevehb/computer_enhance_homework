@@ -523,7 +523,7 @@ char* executeInst(Computer *comp, ParsedInst* program, const int instCount) {
             } else if (pi.dst.type == OPD_DISP) {
                 u16 addr = calcEffectiveAddress(comp, pi.dst.dispOpd.eaIdx, pi.dst.dispOpd.disp);
                 if (checkDstAlign && addr % 2 == 1) {
-                    pi.oddAlignClocks += 4;
+                    pi.oddAlignClocks += 8;  // Write implies a read
                 }
                 oldValue = memWrite(comp, addr, srcValue, pi.w);
                 newValue = memRead(comp, addr, pi.w);
@@ -547,7 +547,7 @@ char* executeInst(Computer *comp, ParsedInst* program, const int instCount) {
             } else if (pi.dst.type == OPD_DISP) {
                 u16 addr = calcEffectiveAddress(comp, pi.dst.dispOpd.eaIdx, pi.dst.dispOpd.disp);
                 if (checkDstAlign && addr % 2 == 1) {
-                    pi.oddAlignClocks += 4;
+                    pi.oddAlignClocks += 8;  // Write implies a read
                 }
                 oldValue = memRead(comp, addr, pi.w);
                 memWrite(comp, addr, oldValue + srcValue, pi.w);

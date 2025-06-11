@@ -87,17 +87,11 @@ int main(int argc, char** argv) {
             jsonBuff += snprintf(jsonBuff, 128, "  {\"lng0\":%.16f,\"lat0\":%.16f,\"lng1\":%.16f,\"lat1\":%.16f}%c\n", lng0, lat0, lng1, lat1, commaChr);
             distBuff[pairIdx] = dist;
             accum += (accumCoef * dist);
-            // fprintf(jsonF, "  {\"lng0\":%.16f,\"lat0\":%.16f,\"lng1\":%.16f,\"lat1\":%.16f}%c\n", lng0, lat0, lng1, lat1, commaChr);
-            // fwrite(&dist, sizeof(dist), 1, distF);
-            // bool errantLng = lng0 < MIN_LNG || lng0 > MAX_LNG || lng1 < MIN_LNG || lng1 > MAX_LNG;
-            // bool errantLat = lat0 < MIN_LAT || lat0 > MAX_LAT || lat1 < MIN_LAT || lat1 > MAX_LAT;
-            // fprintf(stdout, "lng0:%8.3f, lat0:%8.3f, lng1:%8.3f, lat1:%8.3f => dist=%7.2f %s\n", lng0, lat0, lng1, lat1, dist, (errantLat || errantLng) ? "ERRANT" : "");
         }
         fwrite(jsonBuffStart, jsonBuff-jsonBuffStart, 1, jsonF);
         free(jsonBuffStart);
         fwrite(distBuff, sizeof(f64), clusterPairCount, distF);
         free(distBuff);
-        // printf("Generating %llu for cluster %u: total %llu\n", clusterPairCount, clusterIdx, total);
     }
     fprintf(jsonF, "]}\n");
     fwrite(&accum, sizeof(accum), 1, distF);
@@ -110,9 +104,8 @@ int main(int argc, char** argv) {
 
     fflush(stdout);
     fflush(stderr);
-    printf("Wrote %llu pairs to %s, and wrote distances to %s\n", pairCount, jsonFilename, distFilename);
-    printf("Generation time: %.3f ms\n", elapsed);
-    printf("Average distance: %.4f\n", accum);
+    printf("ELAPSED: %.3f ms\n", elapsed);
+    printf("AVG DISTANCE: %.4f\n", accum);
     fflush(stdout);
     fflush(stderr);
 }
