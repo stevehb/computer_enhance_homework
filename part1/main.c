@@ -14,7 +14,7 @@
 #include "utils.c"
 
 // #define DEFAULT_FILENAME    "hw/listing_0056_estimating_cycles"
-#define DEFAULT_FILENAME    "hw/listing_0057_challenge_cycles"
+#define DEFAULT_FILENAME    "hw/past/listing_0057_challenge_cycles"
 
 u8 getBitValue(u8* ptr, BitField bits) {
     if(bits.type == BF_NONE || bits.type == BF_COUNT) {
