@@ -96,8 +96,7 @@ int main(int argc, char** argv) {
     fclose(jsonF);
 
     clock_gettime(CLOCK_MONOTONIC, &end);
-    f64 elapsed = (end.tv_sec - start.tv_sec) * 1000.0;
-    elapsed += (end.tv_nsec - start.tv_nsec) / 1000000.0;
+    f64 elapsed = getElapsedMillis(start, end);
 
     fflush(stdout);
     fflush(stderr);

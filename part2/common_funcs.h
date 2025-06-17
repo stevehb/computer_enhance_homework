@@ -6,8 +6,26 @@
 #define COMMON_FUNCS_H
 
 #include <stdbool.h>
+#include <time.h>
 
 #include "types.h"
+
+#ifdef _WIN32
+typedef void* HANDLE;  // Pre-define handle so we don't need windows.h here
+#endif
+
+typedef struct {
+#ifdef _WIN32
+    HANDLE file;
+    HANDLE mapping;
+#else
+    int fd;
+#endif
+
+    char* data;
+    u64 size;
+    u64 position;
+} FileState;
 
 extern const f64 EARTH_RAD;
 
@@ -22,6 +40,7 @@ extern const f64 EARTH_RAD;
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
+f64 getElapsedMillis(struct timespec start, struct timespec end);
 void makeFilenames(char* jsonFilename, char* distFilename, u32 buffSize, u64 pairCount, u32 clusterCount);
 bool getParamValue_str(int argc, char** argv, u32 position, char* buff, u32 buffSize);
 bool getParamValue_u32(int argc, char** argv, const char* name, u32* out_value);

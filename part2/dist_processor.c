@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "types.h"
 #include "common_funcs.h"
@@ -31,21 +32,26 @@ int main(int argc, char** argv) {
         exit(0);
     }
 
+    struct timespec parseStart, parseEnd;
+    clock_gettime(CLOCK_MONOTONIC, &parseStart);
     JsonFile jsonFile = json_parseFile(jsonFilename);
+    clock_gettime(CLOCK_MONOTONIC, &parseEnd);
     {
+        f64 parsedElapsed = getElapsedMillis(parseStart, parseEnd);
         u64 elementBytesUsed = sizeof(JsonElement) * jsonFile.elementCount;
         u64 elementBytesCapacity = sizeof(JsonElement) * jsonFile.elementCapacity;
         u64 stringBytesUsed = jsonFile.stringBuffUsed;
         u64 stringBytesCapacity = jsonFile.stringBuffCapacity;
-        printf("Parsed %llu bytes for %llu JSON elements. Using %llu / %llu bytes for elements, and %llu / %llu bytes for strings\n",
+        printf("PARSE: Parsed %llu bytes, %llu JSON elements; memory: %llu / %llu bytes for elements, and %llu / %llu bytes for strings\n",
             jsonFile.fileSize, jsonFile.elementCount, elementBytesUsed, elementBytesCapacity, stringBytesUsed, stringBytesCapacity);
+        printf("PARSE: Elapsed %.3fms\n", parsedElapsed);
     }
 
     // printf("Finished parsing file: %llu elements and %llu bytes of strings\n", jsonFile.elementCount, jsonFile.stringBuffUsed);
     // char buff[256] = { 0 };
     // for (u64 i = 0; i < jsonFile.elementCount; i++) {
     //     JsonElement* el = &jsonFile.elements[i];
-    //     printf("EL[%3llu] %s\n", i, json_getElementStr(el, buff, 256));
+    //     printf("EL[%3llu] %s\n", i, json_getElementStr(&jsonFile, el, buff, 256));
     // }
 
     FileState distFile = { 0 };
@@ -53,31 +59,36 @@ int main(int argc, char** argv) {
         distFile = mmapFile(distFilename);
     }
 
+    struct timespec calcStart, calcEnd;
+    clock_gettime(CLOCK_MONOTONIC, &calcStart);
     bool isInPairs = false;
     f64 lng0 = NAN, lat0 = NAN, lng1 = NAN, lat1 = NAN;
     u64 pairsProcessed = 0, totalPairsCount = 0;
     f64 accumCoef = 1.0;
     f64 calcAccum = 0.0;
+    f64 maxDistDrift = 0.0;
+    u64 distDriftCount = 0;
+    u64 maxDistPairIdx = 0;
     for (u64 i = 0; i < jsonFile.elementCount; i++) {
         JsonElement el = jsonFile.elements[i];
-        if (el.type == JSON_ARRAY_BEGIN && strcmp(el.name, "pairs") == 0) {
+        if (el.type == JSON_ARRAY_BEGIN && strcmp(jsonFile.stringBuff + el.nameOffset, "pairs") == 0) {
             isInPairs = true;
             totalPairsCount = el.container.childCount;
             accumCoef = 1.0 / (f64)totalPairsCount;
             continue;
         }
-        if (el.type == JSON_ARRAY_END && strcmp(el.name, "pairs") == 0) {
+        if (el.type == JSON_ARRAY_END && strcmp(jsonFile.stringBuff + el.nameOffset, "pairs") == 0) {
             isInPairs = false;
             continue;
         }
         if (el.type == JSON_NUMBER && isInPairs) {
-            if (strcmp(el.name, "lng0") == 0) {
+            if (strcmp(jsonFile.stringBuff + el.nameOffset, "lng0") == 0) {
                 lng0 = el.number.value;
-            } else if (strcmp(el.name, "lat0") == 0) {
+            } else if (strcmp(jsonFile.stringBuff + el.nameOffset, "lat0") == 0) {
                 lat0 = el.number.value;
-            } else if (strcmp(el.name, "lng1") == 0) {
+            } else if (strcmp(jsonFile.stringBuff + el.nameOffset, "lng1") == 0) {
                 lng1 = el.number.value;
-            } else if (strcmp(el.name, "lat1") == 0) {
+            } else if (strcmp(jsonFile.stringBuff + el.nameOffset, "lat1") == 0) {
                 lat1 = el.number.value;
             }
             continue;
@@ -95,21 +106,37 @@ int main(int argc, char** argv) {
                 f64 knownDist = 0.0;
                 memcpy(&knownDist, distFile.data + distFile.position, sizeof(f64));
                 distFile.position += sizeof(f64);
-                if (fabs(knownDist - calcDist) >= (DBL_EPSILON * 2.0)) {
-                    printf("WARNING: Distances differ:\n");
-                    printf("[%llu]    calcDist:  %.16f\n", totalPairsCount, calcDist);
-                    printf("[%llu]    knownDist: %.16f\n", totalPairsCount, knownDist);
+                f64 diff = fabs(knownDist - calcDist);
+                if (diff >= (DBL_EPSILON * 1.0)) {
+                    distDriftCount++;
+                    if (diff > maxDistDrift) {
+                        maxDistDrift = diff;
+                        maxDistPairIdx = pairsProcessed;
+                    }
+                    // printf("WARNING: Distances differ:\n");
+                    // printf("[%llu]    calcDist:  %.16f\n", pairsProcessed, calcDist);
+                    // printf("[%llu]    knownDist: %.16f\n", pairsProcessed, knownDist);
                 }
             }
         }
     }
-    printf("Processed %llu of %llu coordinate pairs.\n", pairsProcessed, totalPairsCount);
-    printf("Calculated sum: %.16f\n", calcAccum);
+    clock_gettime(CLOCK_MONOTONIC, &calcEnd);
+    f64 calcElapsed = getElapsedMillis(calcStart, calcEnd);
+
+    if (distDriftCount > 0) {
+        printf("WARNING: Found %llu distance errors: max error %.16f at pair %llu\n", distDriftCount, maxDistDrift, maxDistPairIdx);
+        printf("         DBL_EPSILON: %.16f\n", DBL_EPSILON);
+    }
+
+
+    printf("CALC: Processed %llu of %llu coordinate pairs.\n", pairsProcessed, totalPairsCount);
+    printf("CALC: Elapsed %.3fms\n", calcElapsed);
+    printf("    calculated sum:   %.16f\n", calcAccum);
     if (hasDist) {
         f64 knownAccum = 0.0;
         u64 lastOffset = distFile.size - sizeof(f64);
         memcpy(&knownAccum, distFile.data + lastOffset, sizeof(f64));
-        printf("Known sum:      %.16f\n", knownAccum);
+        printf("    pre-computed sum: %.16f\n", knownAccum);
     }
 
     if (hasDist) {

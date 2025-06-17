@@ -7,10 +7,26 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windef.h>
+#include <winbase.h>
+#else
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#endif
+
 #include "types.h"
 #include "common_funcs.h"
 
 const f64 EARTH_RAD = 6372.8;
+
+f64 getElapsedMillis(struct timespec start, struct timespec end) {
+    f64 elapsed = (end.tv_sec - start.tv_sec) * 1000.0;
+    elapsed += (end.tv_nsec - start.tv_nsec) / 1000000.0;
+    return elapsed;
+}
 
 void makeFilenames(char* jsonFilename, char* distFilename, u32 buffSize, u64 pairCount, u32 clusterCount) {
     snprintf(jsonFilename, buffSize, "data-%llu-%u-coords.json", pairCount, clusterCount);

@@ -8,7 +8,7 @@ coord_gen:
 	gcc -O3 -o coord_gen.exe coord_gen.c random_number_generator.c common_funcs.c -lm
 
 dist_processor:
-	gcc -g -o dist_processor.exe dist_processor.c common_funcs.c json_parser.c -lm
+	gcc -O3 -o dist_processor.exe dist_processor.c common_funcs.c json_parser.c -lm
 
 clean:
 	rm -f decode8086.exe

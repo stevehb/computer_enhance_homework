@@ -39,7 +39,7 @@ typedef struct JsonElement JsonElement;
 typedef struct JsonElement {
     JsonType type;
     u64 parentElementIdx;
-    char* name;
+    u64 nameOffset;
 
     union {
         struct {
@@ -49,7 +49,7 @@ typedef struct JsonElement {
         } container;
 
         struct {
-            char* value;
+            u64 valueOffset;
         } string;
 
         struct {
@@ -82,7 +82,7 @@ typedef struct JsonFile {
 
 
 JsonFile json_parseFile(const char* filename);
-char* json_getElementStr(JsonElement* el, char* buff, u32 buffLen);
+char* json_getElementStr(JsonFile* file, JsonElement* el, char* out_buff, u32 buffLen);
 void json_freeFile(JsonFile* file);
 
 #endif //JSON_PARSER_H

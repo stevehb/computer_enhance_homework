@@ -42,7 +42,9 @@ static const char* TOKEN_STRS[] = {
 static u64 json_getLenWhile(FileState* state, char* validChars);
 static u64 json_getLenUntil(FileState* state, char* delims);
 static u64 json_addElement(JsonFile* file, JsonElement element);
-static char* json_ingestString(FileState* state, JsonFile* file);
+static u64 json_findStrInHaystack(char* haystack, u64 haystackSize, char* needle, u64 needleLen);
+static u64 json_ingestString(FileState* state, JsonFile* file);
+static f64 json_ingestNumber(FileState* state);
 static u64 json_consumeWhitespace(FileState* state);
 static JsonToken json_getToken(char c);
 
@@ -101,9 +103,33 @@ static u64 json_addElement(JsonFile* file, JsonElement element) {
     file->elements[file->elementCount++] = element;
     return file->elementCount - 1;
 }
-static char* json_ingestString(FileState* state, JsonFile* file) {
-    u64 strLen = json_getLenUntil(state, "\"");
-    u64 minCapacity = file->stringBuffUsed + strLen + 1;
+static u64 json_findStrInHaystack(char* haystack, u64 haystackSize, char* needle, u64 needleLen) {
+    u64 haystackIdx = 1;  // 0 Reserved for not found
+    while (haystackIdx < haystackSize) {
+        u64 hayLen = strlen(haystack + haystackIdx);
+        if (needleLen == hayLen) {
+            bool isEqual = memcmp(haystack + haystackIdx, needle, needleLen) == 0;
+            if (isEqual) {
+                return haystackIdx;
+            }
+        }
+        haystackIdx += hayLen + 1;
+    }
+    return 0;
+}
+static u64 json_ingestString(FileState* state, JsonFile* file) {
+    u64 needleLen = json_getLenUntil(state, "\"");
+    // Try to find exising string
+    {
+        u64 existingOffset = json_findStrInHaystack(file->stringBuff, file->stringBuffUsed, state->data + state->position, needleLen);
+        if (existingOffset != 0) {
+            state->position += needleLen + 1;  // Consume closing quotation mark
+            return existingOffset;
+        }
+    }
+
+    // New string...
+    u64 minCapacity = file->stringBuffUsed + needleLen + 1;
     if (minCapacity > file->stringBuffCapacity) {
         u64 newCapacity = file->stringBuffCapacity == 0 ? 1024 : (file->stringBuffCapacity * 2);
         while (newCapacity < minCapacity) {
@@ -117,16 +143,19 @@ static char* json_ingestString(FileState* state, JsonFile* file) {
         }
         file->stringBuff = newBuff;
         file->stringBuffCapacity = newCapacity;
+        if (file->stringBuffUsed == 0) {
+            file->stringBuffUsed = 1;  // 0 reserved for no string
+        }
     }
 
     u64 buffIdx = file->stringBuffUsed;
-    memcpy(file->stringBuff + buffIdx, state->data + state->position, strLen);
-    file->stringBuff[buffIdx + strLen] = '\0';
-    file->stringBuffUsed += strLen + 1;
-    state->position += strLen + 1;  // Consume closing quotation mark
-    return &file->stringBuff[buffIdx];
+    memcpy(file->stringBuff + buffIdx, state->data + state->position, needleLen);
+    file->stringBuff[buffIdx + needleLen] = '\0';
+    file->stringBuffUsed += needleLen + 1;
+    state->position += needleLen + 1;  // Consume closing quotation mark
+    return buffIdx;
 }
-static f64 json_ingestNumber(FileState* state, JsonFile* file) {
+static f64 json_ingestNumber(FileState* state) {
     u64 numLen = json_getLenWhile(state, "-.0123456789");
     if (numLen > 64) {
         fprintf(stderr, "ERROR: Number string is too big. expected less than 64, found %llu\n", numLen);
@@ -240,7 +269,7 @@ JsonFile json_parseFile(const char* filename) {
             JsonElement* startEl = &file.elements[currentParentIdx];
             pendingEl.type = (tok == TOK_RBRACE) ? JSON_OBJECT_END : JSON_ARRAY_END;
             pendingEl.parentElementIdx = startEl->parentElementIdx;
-            pendingEl.name = startEl->name;
+            pendingEl.nameOffset = startEl->nameOffset;
             pendingEl.container.startIdx = startEl->container.startIdx;
             pendingEl.container.endIdx = nextInsertIdx;
             pendingEl.container.indentLevel = startEl->container.indentLevel;
@@ -272,12 +301,12 @@ JsonFile json_parseFile(const char* filename) {
         case TOK_STRING: {
             JsonElement* parentEl = &file.elements[currentParentIdx];
             bool needsName = parentEl->type == JSON_OBJECT_BEGIN;
-            bool isName = needsName && pendingEl.name == NULL;
+            bool isName = needsName && pendingEl.nameOffset == 0;
             if (isName) {
-                pendingEl.name = json_ingestString(&state, &file);
+                pendingEl.nameOffset = json_ingestString(&state, &file);
             } else {
                 pendingEl.type = JSON_STRING;
-                pendingEl.string.value = json_ingestString(&state, &file);
+                pendingEl.string.valueOffset = json_ingestString(&state, &file);
             }
             hasPending = true;
         } break;
@@ -285,7 +314,7 @@ JsonFile json_parseFile(const char* filename) {
         case TOK_NUMBER: {
             pendingEl.type = JSON_NUMBER;
             state.position--;
-            pendingEl.number.value = json_ingestNumber(&state, &file);
+            pendingEl.number.value = json_ingestNumber(&state);
             hasPending = true;
         } break;
 
@@ -311,51 +340,68 @@ JsonFile json_parseFile(const char* filename) {
     munmapFile(&state);
     return file;
 }
-char* json_getElementStr(JsonElement* el, char* buff, u32 buffLen) {
+char* json_getElementStr(JsonFile* file, JsonElement* el, char* out_buff, u32 buffLen) {
     char typeStr[32] = { 0 };
-    snprintf(typeStr, 32, "%20s ", JSON_TYPE_STRS[el->type]);
-
-    char namePrefix[64] = { 0 };
-    if (el->name != NULL) {
-        snprintf(namePrefix, 64, "\"%s\": ", el->name);
+    {
+        snprintf(typeStr, 32, "%20s ", JSON_TYPE_STRS[el->type]);
     }
 
-    char valueStr[128] = { 0 };
+    char indentStr[64] = { 0 };
+    {
+        JsonElement parentEl = file->elements[el->parentElementIdx];
+        u32 indent = parentEl.container.indentLevel * 4;
+        snprintf(indentStr, 64, "%*s", indent, " ");
+    }
+
+    char namePrefix[64] = { 0 };
+    if (el->nameOffset != 0 && !(el->type == JSON_OBJECT_END || el->type == JSON_ARRAY_END)) {
+        snprintf(namePrefix, 64, "\"%s\": ", file->stringBuff + el->nameOffset);
+    }
+
+    char valueStr[64] = { 0 };
     switch (el->type) {
     case JSON_NONCE: {
         // NOOP
     } break;
     case JSON_OBJECT_BEGIN: {
-        snprintf(valueStr, 128, "%*s childCount=%llu", (el->container.indentLevel*4), "{", el->container.childCount);
+        snprintf(valueStr, 64, "{    // childCount=%llu", el->container.childCount);
     } break;
     case JSON_OBJECT_END: {
-        snprintf(valueStr, 128, "%*s", (el->container.indentLevel*4), "}");
+        if (el->nameOffset != 0) {
+            snprintf(valueStr, 64, "}    // %s", file->stringBuff + el->nameOffset);
+        } else {
+            strncpy(valueStr, "}", 64);
+        }
     } break;
     case JSON_ARRAY_BEGIN: {
-        snprintf(valueStr, 128, "%*s childCount=%llu", (el->container.indentLevel*4), "[", el->container.childCount);
+        snprintf(valueStr, 64, "[    // childCount=%llu", el->container.childCount);
     } break;
     case JSON_ARRAY_END: {
-        snprintf(valueStr, 128, "%*s", (el->container.indentLevel*4), "]");
+        if (el->nameOffset != 0) {
+            snprintf(valueStr, 64, "]    // %s", file->stringBuff + el->nameOffset);
+        } else {
+            strncpy(valueStr, "]", 64);
+        }
     } break;
     case JSON_STRING: {
-        snprintf(valueStr, 128, "%s", el->string.value);
+        snprintf(valueStr, 64, "\"%s\"", file->stringBuff + el->string.valueOffset);
     } break;
     case JSON_NUMBER: {
-        snprintf(valueStr, 128, "%.16f", el->number.value);
+        snprintf(valueStr, 64, "%.16f", el->number.value);
     } break;
     case JSON_BOOL: {
-        snprintf(valueStr, 128, "%s", el->boolean.value ? "TRUE" : "FALSE");
+        snprintf(valueStr, 64, "%s", el->boolean.value ? "TRUE" : "FALSE");
     } break;
     case JSON_NULL: {
-        snprintf(valueStr, 128, "%s", "NULL");
+        snprintf(valueStr, 64, "%s", "NULL");
     } break;
     case JSON_TYPE_COUNT:
         // NOOP
         break;
     }
 
-    snprintf(buff, buffLen, "%s%s%s", typeStr, namePrefix, valueStr);
-    return buff;
+    snprintf(out_buff, buffLen, "%s%s%s%s", typeStr, indentStr, namePrefix, valueStr);
+    return out_buff;
 }
 void json_freeFile(JsonFile* file) {
     assert(file != NULL);
