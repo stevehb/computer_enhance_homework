@@ -14,8 +14,6 @@
 #include "common_funcs.h"
 #include "random_number_generator.h"
 
-const f64 EARTH_RAD = 6372.8;
-
 const f64 MIN_LNG = -180.0;
 const f64 MAX_LNG = 180.0;
 const f64 MIN_LAT = -90.0;
@@ -32,22 +30,21 @@ f64 clampLat(f64 f) {
     return f;
 }
 
-static bool getParamValue_u32(int argc, char** argv, const char* name, u32* out_value);
-static bool getParamValue_u64(int argc, char** argv, const char* name, u64* out_value);
+
+
 
 int main(int argc, char** argv) {
     u32 seed = 1000;
     u64 pairCount = 5;
     u32 clusterCount = 4;
-    char jsonFilename[256] = { 0 }, distFilename[256] = { 0 };
+    char jsonFilename[FILENAME_LEN] = { 0 }, distFilename[FILENAME_LEN] = { 0 };
 
     getParamValue_u32(argc, argv, "-seed", &seed);
     getParamValue_u64(argc, argv, "-pairs", &pairCount);
     getParamValue_u32(argc, argv, "-clusters", &clusterCount);
 
     xoshiro_seed(seed);
-    snprintf(jsonFilename, sizeof(jsonFilename), "data-%llu-%u-coords.json", pairCount, clusterCount);
-    snprintf(distFilename, sizeof(distFilename), "data-%llu-%u-dist.f64", pairCount, clusterCount);
+    makeFilenames(jsonFilename, distFilename, FILENAME_LEN, pairCount, clusterCount);
 
     printf("SEED: %u\n", seed);
     printf("FILENAMES: '%s' and '%s'\n", jsonFilename, distFilename);
@@ -84,7 +81,7 @@ int main(int argc, char** argv) {
             f64 lat1 = rand_f64(minLat, maxLat);
             char commaChr = (isLastCluster && isLastPair) ? ' ' : ',';
             f64 dist = referenceHaversineDistance(lng0, lat0, lng1, lat1, EARTH_RAD);
-            jsonBuff += snprintf(jsonBuff, 128, "  {\"lng0\":%.16f,\"lat0\":%.16f,\"lng1\":%.16f,\"lat1\":%.16f}%c\n", lng0, lat0, lng1, lat1, commaChr);
+            jsonBuff += snprintf(jsonBuff, 128, "  {\"lng0\":%21.16f,\"lat0\":%21.16f,\"lng1\":%21.16f,\"lat1\":%21.16f}%c\n", lng0, lat0, lng1, lat1, commaChr);
             distBuff[pairIdx] = dist;
             accum += (accumCoef * dist);
         }
@@ -108,44 +105,4 @@ int main(int argc, char** argv) {
     printf("AVG DISTANCE: %.4f\n", accum);
     fflush(stdout);
     fflush(stderr);
-}
-
-
-static bool getParamValue_u32(int argc, char** argv, const char* name, u32* out_value) {
-    for (int argIdx = 1; argIdx < argc; argIdx++) {
-        const char* arg = argv[argIdx];
-        if (strcmp(arg, name) == 0) {
-            if (argIdx + 1 < argc) {
-                const char* seedStr = argv[argIdx+1];
-                u32 holder = 0;
-                int matches = sscanf(seedStr, "%u", &holder);
-                if (matches != 1) {
-                    fprintf(stderr, "ERROR: the parameter value for `%s %s` does not parse to an integer\n", name, seedStr);
-                    exit(0);
-                }
-                *out_value = holder;
-                return true;
-            }
-        }
-    }
-    return false;
-}
-static bool getParamValue_u64(int argc, char** argv, const char* name, u64* out_value) {
-    for (int argIdx = 1; argIdx < argc; argIdx++) {
-        const char* arg = argv[argIdx];
-        if (strcmp(arg, name) == 0) {
-            if (argIdx + 1 < argc) {
-                const char* seedStr = argv[argIdx+1];
-                u64 holder = 0;
-                int matches = sscanf(seedStr, "%llu", &holder);
-                if (matches != 1) {
-                    fprintf(stderr, "ERROR: the parameter value for `%s %s` does not parse to an integer\n", name, seedStr);
-                    exit(0);
-                }
-                *out_value = holder;
-                return true;
-            }
-        }
-    }
-    return false;
 }

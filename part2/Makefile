@@ -7,8 +7,8 @@ all: build_exe
 coord_gen:
 	gcc -O3 -o coord_gen.exe coord_gen.c random_number_generator.c common_funcs.c -lm
 
-build_exe:
-	gcc -g -o decode8086.exe main.c
+dist_processor:
+	gcc -g -o dist_processor.exe dist_processor.c common_funcs.c json_parser.c -lm
 
 clean:
 	rm -f decode8086.exe

@@ -7,6 +7,14 @@
 
 #include <stdint.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#endif
+
 typedef float       f32;
 typedef double      f64;
 typedef int8_t      s8;
@@ -19,5 +27,20 @@ typedef int64_t     s64;
 typedef uint64_t    u64;
 typedef __int128_t  s128;
 typedef __uint128_t u128;
+
+
+typedef struct {
+#ifdef _WIN32
+    HANDLE file;
+    HANDLE mapping;
+#else
+    int fd;
+#endif
+
+    char* data;
+    u64 size;
+    u64 position;
+} FileState;
+
 
 #endif //TYPES_H

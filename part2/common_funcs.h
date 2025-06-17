@@ -5,7 +5,13 @@
 #ifndef COMMON_FUNCS_H
 #define COMMON_FUNCS_H
 
+#include <stdbool.h>
+
 #include "types.h"
+
+extern const f64 EARTH_RAD;
+
+#define FILENAME_LEN    256
 
 #define DEG2RAD_FACTOR  0.017453292519943295769
 #define RAD2DEG_FACTOR 57.295779513082320877
@@ -13,6 +19,15 @@
 #define DEG2RAD(deg) ((f64)(deg) * DEG2RAD_FACTOR)
 #define RAD2DEG(rad) ((f64)(rad) * RAD2DEG_FACTOR)
 
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
+void makeFilenames(char* jsonFilename, char* distFilename, u32 buffSize, u64 pairCount, u32 clusterCount);
+bool getParamValue_str(int argc, char** argv, u32 position, char* buff, u32 buffSize);
+bool getParamValue_u32(int argc, char** argv, const char* name, u32* out_value);
+bool getParamValue_u64(int argc, char** argv, const char* name, u64* out_value);
 f64 referenceHaversineDistance(f64 lng0, f64 lat0, f64 lng1, f64 lat1, f64 rad);
+FileState mmapFile(const char* filename);
+void munmapFile(FileState* state);
 
 #endif //COMMON_FUNCS_H
