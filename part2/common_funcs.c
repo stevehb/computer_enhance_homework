@@ -9,8 +9,7 @@
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
-#include <windef.h>
-#include <winbase.h>
+#include <windows.h>
 #else
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -26,6 +25,12 @@ f64 getElapsedMillis(struct timespec start, struct timespec end) {
     f64 elapsed = (end.tv_sec - start.tv_sec) * 1000.0;
     elapsed += (end.tv_nsec - start.tv_nsec) / 1000000.0;
     return elapsed;
+}
+
+const char* basename(const char* path) {
+    const char* last = strrchr(path, '\\');
+    if (!last) last = strrchr(path, '/');
+    return last ? last + 1 : path;
 }
 
 void makeFilenames(char* jsonFilename, char* distFilename, u32 buffSize, u64 pairCount, u32 clusterCount) {

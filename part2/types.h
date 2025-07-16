@@ -17,7 +17,9 @@ typedef int32_t     s32;
 typedef uint32_t    u32;
 typedef int64_t     s64;
 typedef uint64_t    u64;
+#ifndef _MSC_VER
 typedef __int128_t  s128;
 typedef __uint128_t u128;
+#endif
 
 #endif //TYPES_H

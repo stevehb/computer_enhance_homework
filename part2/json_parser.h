@@ -61,6 +61,7 @@ typedef struct JsonElement {
         } boolean;
 
         struct {
+            void* null;
         } null;
     };
 } JsonElement;
