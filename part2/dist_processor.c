@@ -12,10 +12,11 @@
 #include "types.h"
 #include "common_funcs.h"
 #include "json_parser.h"
-#include "timer.h"
+#include "tempo.h"
 
 int main(int argc, char** argv) {
-    u64 startupStart = readCpuTimer();
+    tempo_startProfile("DIST_PROC");
+    tempo_startBlock("startup");
     setbuf(stdout, NULL);
     setbuf(stderr, NULL);
 
@@ -32,21 +33,19 @@ int main(int argc, char** argv) {
         fprintf(stdout, "  distFilename    generated distances file for validation\n");
         exit(0);
     }
-    u64 startupElapsed = readCpuTimer() - startupStart;
+    tempo_stopBlock("startup");
 
     printf("Reading %s\n", jsonFilename);
-    u64 jsonParseStart = readCpuTimer();
     JsonFile jsonFile = json_parseFile(jsonFilename);
     u64 jsonFileSize = jsonFile.fileSize;
     u64 jsonElementCount = jsonFile.elementCount;
-    u64 jsonParseElapsed = readCpuTimer() - jsonParseStart;
 
-    u64 distMapStart = readCpuTimer();
+    tempo_startBlock("dist_fileMap");
     FileState distFile = { 0 };
     if (hasDist) {
         distFile = mmapFile(distFilename);
     }
-    u64 distMapElapsed = readCpuTimer() - distMapStart;
+    tempo_stopBlock("dist_fileMap");
 
     bool isInPairs = false;
     f64 lng0 = NAN, lat0 = NAN, lng1 = NAN, lat1 = NAN;
@@ -57,8 +56,8 @@ int main(int argc, char** argv) {
     u64 distDriftCount = 0;
     u64 maxDistPairIdx = 0;
     f64 distCheckFinal = 0.0;
-    u64 distCalcStart = readCpuTimer();
     u64 distCheckElapsed = 0;
+    tempo_startBlock("dist_calc");
     for (u64 i = 0; i < jsonFile.elementCount; i++) {
         JsonElement el = jsonFile.elements[i];
         if (el.type == JSON_ARRAY_BEGIN && strcmp(jsonFile.stringBuff + el.nameOffset, "pairs") == 0) {
@@ -94,7 +93,6 @@ int main(int argc, char** argv) {
             lng0 = lat0 = lng1 = lat1 = NAN;
 
             if (hasDist) {
-                u64 distCheckStart = readCpuTimer();
                 f64 knownDist = 0.0;
                 memcpy(&knownDist, distFile.data + distFile.position, sizeof(f64));
                 distFile.position += sizeof(f64);
@@ -106,32 +104,26 @@ int main(int argc, char** argv) {
                         maxDistPairIdx = pairsProcessed;
                     }
                 }
-                distCheckElapsed += (readCpuTimer() - distCheckStart);
             }
         }
     }
+    tempo_stopBlock("dist_calc");
     if (hasDist) {
-        u64 distCheckStart = readCpuTimer();
         u64 lastOffset = distFile.size - sizeof(f64);
         memcpy(&distCheckFinal, distFile.data + lastOffset, sizeof(f64));
-        distCheckElapsed += (readCpuTimer() - distCheckStart);
     }
-    u64 distCalcElapsed = readCpuTimer() - distCalcStart;
-    distCalcElapsed -= distCheckElapsed;
 
     if (distDriftCount > 0) {
         printf("WARNING: Found %llu distance errors greater than DBL_EPSILON (%E): max error %E at pair %llu\n", distDriftCount, (f64) DBL_EPSILON, maxDistDrift, maxDistPairIdx);
     }
 
-    u64 cleanupStart = readCpuTimer();
+    tempo_startBlock("cleanup");
     if (hasDist) {
         munmapFile(&distFile);
     }
     json_freeFile(&jsonFile);
-    u64 cleanupElapsed = readCpuTimer() - cleanupStart;
+    tempo_stopBlock("cleanup");
 
-
-    u64 totalCpuElapsed = startupElapsed + jsonParseElapsed + distMapElapsed + distCalcElapsed + distCheckElapsed + cleanupElapsed;
     printf("Read and parsed %llu bytes in %s: %llu elements\n", jsonFileSize, jsonFilename, jsonElementCount);
     printf("Calculated%s distance for %llu coordinate pairs.\n", hasDist ? " and checked" : "", pairsProcessed);
     printf("Final sum:   %.16f\n", calcAccum);
@@ -142,13 +134,9 @@ int main(int argc, char** argv) {
         printf("Max pair error: %.16f at pair index %llu\n", maxDistDrift, maxDistPairIdx);
     }
     printf("\n");
-    printf("TIMER: Total elapsed: %15llu clocks (~%.3f sec)\n", totalCpuElapsed, (f64)totalCpuElapsed / (f64)estimateCpuFreq(500));
-    printf("TIMER:   startup:     %15llu (%.2f%%)\n", startupElapsed, ((f64) startupElapsed / (f64)totalCpuElapsed) * 100.0);
-    printf("TIMER:   jsonParse:   %15llu (%.2f%%)\n", jsonParseElapsed, ((f64) jsonParseElapsed / (f64)totalCpuElapsed) * 100.0);
-    printf("TIMER:   distFileMap: %15llu (%.2f%%)\n", distMapElapsed, ((f64) distMapElapsed / (f64)totalCpuElapsed) * 100.0);
-    printf("TIMER:   distCalc:    %15llu (%.2f%%)\n", distCalcElapsed, ((f64) distCalcElapsed / (f64)totalCpuElapsed) * 100.0);
-    printf("TIMER:   distCheck:   %15llu (%.2f%%)\n", distCheckElapsed, ((f64) distCheckElapsed / (f64)totalCpuElapsed) * 100.0);
-    printf("TIMER:   cleanup:     %15llu (%.2f%%)\n", cleanupElapsed, ((f64) cleanupElapsed / (f64)totalCpuElapsed) * 100.0);
+
+    tempo_stopProfile();
+    tempo_printProfile();
 
     return 0;
 }

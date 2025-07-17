@@ -2,15 +2,15 @@
 // Created by stevehb on 12-Jun-25.
 //
 
+#include <assert.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "common_funcs.h"
 #include "json_parser.h"
-
-#include <assert.h>
-#include <math.h>
+#include "tempo.h"
 
 #define JSON_TOKENS(X) \
     X(TOK_LBRACE) \
@@ -225,16 +225,20 @@ static JsonToken json_getToken(char c) {
 }
 
 JsonFile json_parseFile(const char* filename) {
+    tempo_startFunc;
+    tempo_startBlock("json_map");
     JsonFile file = { 0 };
     FileState state = mmapFile(filename);
     strncpy(file.filename, filename, FILENAME_LEN);
     file.fileSize = state.size;
+    tempo_stopBlock("json_map");
 
     state.position = 0;
     u64 currentParentIdx = 0;
     JsonElement pendingEl = { 0 };
     bool hasPending = false;
     u32 indentLevel = 0;
+    tempo_startBlock("json_parseChars");
     while (state.position < state.size) {
         char c = state.data[state.position++];
         JsonToken tok = json_getToken(c);
@@ -336,8 +340,12 @@ JsonFile json_parseFile(const char* filename) {
             exit(1);
         }
     }
+    tempo_stopBlock("json_parseChars");
 
+    tempo_startBlock("json_unmap");
     munmapFile(&state);
+    tempo_stopBlock("json_unmap");
+    tempo_stopFunc;
     return file;
 }
 char* json_getElementStr(JsonFile* file, JsonElement* el, char* out_buff, u32 buffLen) {

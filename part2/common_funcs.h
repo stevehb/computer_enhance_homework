@@ -44,6 +44,7 @@ f64 getElapsedMillis(struct timespec start, struct timespec end);
 
 const char* basename(const char* path);
 void makeFilenames(char* jsonFilename, char* distFilename, u32 buffSize, u64 pairCount, u32 clusterCount);
+void sleep_ms(u64 ms);
 bool getParamValue_str(int argc, char** argv, u32 position, char* buff, u32 buffSize);
 bool getParamValue_u32(int argc, char** argv, const char* name, u32* out_value);
 bool getParamValue_u64(int argc, char** argv, const char* name, u64* out_value);

@@ -14,6 +14,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <unistd.h>
 #endif
 
 #include "types.h"
@@ -36,6 +37,14 @@ const char* basename(const char* path) {
 void makeFilenames(char* jsonFilename, char* distFilename, u32 buffSize, u64 pairCount, u32 clusterCount) {
     snprintf(jsonFilename, buffSize, "data-%llu-%u-coords.json", pairCount, clusterCount);
     snprintf(distFilename, buffSize, "data-%llu-%u-dist.f64", pairCount, clusterCount);
+}
+
+void sleep_ms(u64 ms) {
+#ifdef _WIN32
+    Sleep(ms);
+#else
+    usleep((ms) * 1000);
+#endif
 }
 
 /// position == 1 is the first argument, etc
